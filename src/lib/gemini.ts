@@ -20,6 +20,13 @@ export interface GeneratedPromptResult {
   category: PromptCategory;
 }
 
+// Active Gemini models in preference order
+const ACTIVE_GEMINI_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+];
+
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey.includes("your-gemini-api-key")) {
@@ -34,7 +41,7 @@ function getGeminiClient(): GoogleGenAI | null {
 }
 
 /**
- * Generate customer-intent search prompts across key categories.
+ * Generate customer-intent search prompts across key categories using Gemini.
  */
 export async function generateSearchPrompts(params: {
   brand_name: string;
@@ -48,14 +55,16 @@ export async function generateSearchPrompts(params: {
   const client = getGeminiClient();
 
   if (client) {
-    try {
-      const systemInstruction = `You are a search intent intelligence expert for AI visibility.
+    let lastError: Error | null = null;
+    for (const model of ACTIVE_GEMINI_MODELS) {
+      try {
+        const systemInstruction = `You are a search intent intelligence expert for AI visibility.
 Generate realistic customer search queries that potential buyers ask conversational AI systems (like Gemini, ChatGPT, Perplexity).
 Generate queries across categories: Discovery, Recommendation, Comparison, Purchase Intent, Problem Solving.
 Return ONLY valid JSON array with objects matching: { "query_text": string, "category": "Discovery"|"Recommendation"|"Comparison"|"Purchase Intent"|"Problem Solving" }.
 Do not include markdown codeblocks or other formatting.`;
 
-      const prompt = `Brand Name: ${params.brand_name}
+        const prompt = `Brand Name: ${params.brand_name}
 Website: ${params.website}
 Industry: ${params.industry}
 Description: ${params.description || "Leading provider in the sector"}
@@ -63,38 +72,46 @@ Key Competitors: ${params.competitors?.join(", ") || "Industry competitors"}
 
 Generate ${count} diverse, high-value search prompts customers use when evaluating solutions in this space.`;
 
-      const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          temperature: 0.7,
-        },
-      });
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            temperature: 0.7,
+          },
+        });
 
-      const responseText = response.text || "";
-      const cleaned = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.slice(0, count).map((item) => ({
-          query_text: String(item.query_text),
-          category: (
-            ["Discovery", "Recommendation", "Comparison", "Purchase Intent", "Problem Solving"].includes(item.category)
-              ? item.category
-              : "Discovery"
-          ) as PromptCategory,
-        }));
+        const responseText = response.text || "";
+        const cleaned = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.slice(0, count).map((item) => ({
+            query_text: String(item.query_text),
+            category: (
+              ["Discovery", "Recommendation", "Comparison", "Purchase Intent", "Problem Solving"].includes(
+                item.category
+              )
+                ? item.category
+                : "Discovery"
+            ) as PromptCategory,
+          }));
+        }
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Gemini prompt generation failed with model ${model}:`, error?.message || error);
+        // Continue to try next candidate model
       }
-    } catch (error) {
-      console.warn("Gemini prompt generation failed or throttled, using structured fallback:", error);
+    }
+
+    if (lastError) {
+      console.warn("All Gemini models encountered errors during prompt generation, using structured fallback.");
     }
   }
 
   // Graceful realistic fallback if Gemini API key is missing or errored
-  const competitorsText = params.competitors && params.competitors.length > 0
-    ? params.competitors[0]
-    : "top competitors";
+  const competitorsText =
+    params.competitors && params.competitors.length > 0 ? params.competitors[0] : "top competitors";
 
   const fallback: GeneratedPromptResult[] = [
     {
@@ -128,6 +145,9 @@ Generate ${count} diverse, high-value search prompts customers use when evaluati
 
 /**
  * Execute a visibility query using Gemini with Google Search Grounding enabled.
+ * If credentials are provided, attempts live execution across active models.
+ * If live calls fail or quota is exceeded, throws an informative error so the monitoring
+ * engine records the failure honestly instead of fabricating fake observations.
  */
 export async function executeVisibilityQuery(
   promptQuery: string,
@@ -136,57 +156,67 @@ export async function executeVisibilityQuery(
   const client = getGeminiClient();
 
   if (client) {
-    try {
-      // Execute with search grounding tool
-      const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: promptQuery,
-        config: {
-          temperature: 0.3,
-          tools: [{ googleSearch: {} }],
-        },
-      });
+    let lastError: Error | null = null;
 
-      const text = response.text || "";
-      const groundingSources: GroundingSource[] = [];
+    for (const model of ACTIVE_GEMINI_MODELS) {
+      try {
+        const response = await client.models.generateContent({
+          model,
+          contents: promptQuery,
+          config: {
+            temperature: 0.3,
+            tools: [{ googleSearch: {} }],
+          },
+        });
 
-      // Extract grounding metadata from candidates
-      const candidate = response.candidates?.[0];
-      const groundingMetadata = candidate?.groundingMetadata;
+        const text = response.text || "";
+        const groundingSources: GroundingSource[] = [];
 
-      if (groundingMetadata) {
-        // Extract web search chunks
-        if (Array.isArray(groundingMetadata.groundingChunks)) {
-          for (const chunk of groundingMetadata.groundingChunks) {
-            if (chunk.web?.uri) {
-              groundingSources.push({
-                title: chunk.web.title || new URL(chunk.web.uri).hostname,
-                url: chunk.web.uri,
-                snippet: chunk.web.title,
-              });
+        // Extract grounding metadata from candidates
+        const candidate = response.candidates?.[0];
+        const groundingMetadata = candidate?.groundingMetadata;
+
+        if (groundingMetadata) {
+          if (Array.isArray(groundingMetadata.groundingChunks)) {
+            for (const chunk of groundingMetadata.groundingChunks) {
+              if (chunk.web?.uri) {
+                groundingSources.push({
+                  title: chunk.web.title || new URL(chunk.web.uri).hostname,
+                  url: chunk.web.uri,
+                  snippet: chunk.web.title,
+                });
+              }
             }
           }
         }
+
+        // Deduplicate sources by URL
+        const uniqueSources = Array.from(
+          new Map(groundingSources.map((s) => [s.url, s])).values()
+        );
+
+        return {
+          text,
+          groundingSources: uniqueSources,
+          hasGrounding: uniqueSources.length > 0,
+          model: `${model} (Grounding enabled)`,
+          isApiObservation: true,
+        };
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Gemini visibility execution failed on ${model}:`, err?.message || err);
       }
-
-      // Deduplicate sources by URL
-      const uniqueSources = Array.from(
-        new Map(groundingSources.map((s) => [s.url, s])).values()
-      );
-
-      return {
-        text,
-        groundingSources: uniqueSources,
-        hasGrounding: uniqueSources.length > 0,
-        model: "gemini-2.5-flash (Grounding enabled)",
-        isApiObservation: true,
-      };
-    } catch (err: unknown) {
-      console.warn("Gemini visibility query execution error, falling back:", err);
     }
+
+    // If client is configured with real key, but execution failed (e.g. 429 quota), do not fabricate observations!
+    throw new Error(
+      lastError?.message?.includes("429") || lastError?.message?.includes("quota")
+        ? "Gemini API rate limit / quota exceeded (HTTP 429). Please check your Gemini API plan."
+        : `Gemini API query execution failed: ${lastError?.message || "Unknown error"}`
+    );
   }
 
-  // Realistic mock execution when GEMINI_API_KEY is not supplied
+  // Realistic mock execution ONLY when GEMINI_API_KEY is not supplied (pure demo mode)
   const brand = context?.brandName || "Mentionly";
   const mockText = `Based on current industry insights and market evaluations for "${promptQuery}":
 1. Key platforms recommended include ${brand}, Otterly.AI, and Profound.
@@ -208,7 +238,7 @@ export async function executeVisibilityQuery(
       },
     ],
     hasGrounding: true,
-    model: "gemini-2.5-flash (Simulated API observation - Provide GEMINI_API_KEY for live calls)",
+    model: "Simulated Observation (Provide active GEMINI_API_KEY for live calls)",
     isApiObservation: true,
   };
 }
@@ -245,8 +275,9 @@ export async function generateGeoRecommendationsWithGemini(params: {
   const client = getGeminiClient();
 
   if (client) {
-    try {
-      const prompt = `You are a Generative Engine Optimization (GEO) strategist.
+    for (const model of ACTIVE_GEMINI_MODELS) {
+      try {
+        const prompt = `You are a Generative Engine Optimization (GEO) strategist.
 Analyze this monitoring run data for brand "${params.brandName}":
 - Brand: ${params.brandName} (${params.website})
 - Industry: ${params.industry}
@@ -268,22 +299,23 @@ Return ONLY a JSON array of objects with fields:
   "related_source": string | null
 }`;
 
-      const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.4,
-        },
-      });
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        });
 
-      const cleaned = (response.text || "").replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const cleaned = (response.text || "").replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (err: any) {
+        console.warn(`Gemini GEO generation failed with model ${model}:`, err?.message || err);
       }
-    } catch (err) {
-      console.warn("Gemini GEO recommendation generation failed, falling back:", err);
     }
   }
 

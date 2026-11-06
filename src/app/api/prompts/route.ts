@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promptCreateSchema } from "@/lib/validations";
-import { listPrompts, createPrompt, togglePromptActive, deletePrompt } from "@/lib/data-service";
+import { listPrompts, createPrompt, updatePrompt, deletePrompt } from "@/lib/data-service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,11 +39,21 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const json = await req.json();
-    const { id, is_active } = json;
-    if (!id || typeof is_active !== "boolean") {
-      return NextResponse.json({ error: "id and is_active boolean required" }, { status: 400 });
+    const { id, is_active, query_text, category } = json;
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
-    const updated = await togglePromptActive(id, is_active);
+
+    const updated = await updatePrompt(id, {
+      is_active,
+      query_text,
+      category,
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: "Prompt not found" }, { status: 404 });
+    }
+
     return NextResponse.json({ prompt: updated });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -63,4 +73,3 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

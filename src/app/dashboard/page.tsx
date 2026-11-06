@@ -106,6 +106,19 @@ export default function DashboardPage() {
     latest_recommendations,
   } = data;
 
+  const scoreTrendData =
+    trend && trend.length >= 2
+      ? (() => {
+          const last = trend[trend.length - 1].visibility_score;
+          const prev = trend[trend.length - 2].visibility_score;
+          const diff = Number((last - prev).toFixed(1));
+          return {
+            value: `${diff >= 0 ? "+" : ""}${diff}% vs last check`,
+            isPositive: diff >= 0,
+          };
+        })()
+      : { value: "Initial benchmark", isPositive: true };
+
   return (
     <div className="space-y-6">
       {/* Top Title Bar */}
@@ -146,7 +159,7 @@ export default function DashboardPage() {
           subtitle="Composite brand presence index"
           icon={TrendingUp}
           highlight
-          trend={{ value: "+4.2% vs last run", isPositive: true }}
+          trend={scoreTrendData}
         />
         <KpiCard
           title="Brand Mention Rate"

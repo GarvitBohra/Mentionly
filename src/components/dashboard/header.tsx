@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 
 export function DashboardHeader({
   onMobileMenuToggle,
@@ -26,6 +27,7 @@ export function DashboardHeader({
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("demo@mentionly.ai");
 
   useEffect(() => {
     fetch("/api/brands")
@@ -37,7 +39,25 @@ export function DashboardHeader({
         }
       })
       .catch((err) => console.error("Error loading brands in header:", err));
+
+    const supabase = createClient();
+    if (supabase) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user?.email) {
+          setUserEmail(data.user.email);
+        }
+      });
+    }
   }, []);
+
+  const handleSignOut = async () => {
+    setUserMenuOpen(false);
+    const supabase = createClient();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    router.push("/login");
+  };
 
   return (
     <header className="sticky top-0 z-20 flex h-16 w-full items-center justify-between border-b border-[#1e242c] bg-[#090d12]/90 backdrop-blur-md px-4 sm:px-6">
@@ -77,11 +97,10 @@ export function DashboardHeader({
                     setDropdownOpen(false);
                     router.push(`/dashboard?brand_id=${b.id}`);
                   }}
-                  className={`w-full text-left flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs ${
-                    selectedBrand?.id === b.id
+                  className={`w-full text-left flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs ${selectedBrand?.id === b.id
                       ? "bg-indigo-600/20 text-indigo-300 font-medium"
                       : "text-slate-300 hover:bg-[#161c24]"
-                  }`}
+                    }`}
                 >
                   <span className="truncate">{b.name}</span>
                   {selectedBrand?.id === b.id && (
@@ -126,7 +145,7 @@ export function DashboardHeader({
             <div className="absolute right-0 mt-1.5 w-48 rounded-xl border border-[#262c36] bg-[#0e1218] p-1.5 shadow-xl shadow-black/60 z-50">
               <div className="px-2.5 py-1.5 border-b border-[#1e242c]">
                 <p className="text-xs font-medium text-slate-200">Workspace User</p>
-                <p className="text-[11px] text-slate-400 truncate">demo@mentionly.ai</p>
+                <p className="text-[11px] text-slate-400 truncate">{userEmail}</p>
               </div>
               <Link
                 href="/dashboard/settings"
@@ -145,14 +164,13 @@ export function DashboardHeader({
                 <span>View Landing Page</span>
               </Link>
               <div className="my-1 border-t border-[#1e242c]" />
-              <Link
-                href="/login"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-950/20"
+              <button
+                onClick={handleSignOut}
+                className="w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-950/20"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sign Out</span>
-              </Link>
+              </button>
             </div>
           )}
         </div>

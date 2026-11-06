@@ -15,6 +15,9 @@ export async function GET(req: NextRequest) {
     if (runs.length === 0) {
       return NextResponse.json({
         brand,
+        brand_mention_rate: 0,
+        brand_recommendation_rate: 0,
+        brand_visibility_score: 0,
         competitors: (brand.competitors || []).map((c) => ({
           name: c.name,
           website: c.website,
@@ -29,7 +32,6 @@ export async function GET(req: NextRequest) {
 
     const latestRun = runs[0];
     const { results } = await getMonitoringRun(latestRun.id);
-    const citations = await listCitations(brand.id);
 
     const totalResults = results.length || 1;
     const competitorMap: Record<
@@ -81,6 +83,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       brand,
+      brand_mention_rate: latestRun.brand_mention_rate,
+      brand_recommendation_rate: latestRun.recommendation_rate,
+      brand_visibility_score: latestRun.visibility_score,
       competitors: competitorsList,
       total_prompts: totalResults,
       has_monitoring_data: true,
@@ -90,4 +95,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

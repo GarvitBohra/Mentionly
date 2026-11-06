@@ -12,25 +12,79 @@ import {
   DashboardAnalytics,
 } from "@/types";
 
+export interface SupabaseHealth {
+  isConfigured: boolean;
+  tablesExist: boolean;
+  message?: string;
+}
+
+let cachedHealth: { result: SupabaseHealth; timestamp: number } | null = null;
+
+export async function checkSupabaseHealth(): Promise<SupabaseHealth> {
+  if (cachedHealth && Date.now() - cachedHealth.timestamp < 30000) {
+    return cachedHealth.result;
+  }
+
+  const supabase = createAdminClient();
+  if (!supabase) {
+    const res: SupabaseHealth = {
+      isConfigured: false,
+      tablesExist: false,
+      message: "Supabase credentials not configured in environment variables.",
+    };
+    cachedHealth = { result: res, timestamp: Date.now() };
+    return res;
+  }
+
+  try {
+    const { data, error } = await supabase.from("brands").select("id").limit(1);
+    if (error) {
+      const res: SupabaseHealth = {
+        isConfigured: true,
+        tablesExist: false,
+        message: `Database connected, but schema tables are missing (${error.message}). Run the migration script in Supabase SQL Editor.`,
+      };
+      cachedHealth = { result: res, timestamp: Date.now() };
+      return res;
+    }
+
+    const res: SupabaseHealth = {
+      isConfigured: true,
+      tablesExist: true,
+      message: "Supabase PostgreSQL connected and schema verified.",
+    };
+    cachedHealth = { result: res, timestamp: Date.now() };
+    return res;
+  } catch (err: any) {
+    const res: SupabaseHealth = {
+      isConfigured: true,
+      tablesExist: false,
+      message: `Failed to connect to Supabase: ${err?.message || "Connection error"}`,
+    };
+    cachedHealth = { result: res, timestamp: Date.now() };
+    return res;
+  }
+}
+
 export async function getActiveBrand(requestedBrandId?: string): Promise<Brand> {
   const supabase = createAdminClient();
   if (supabase) {
     try {
       if (requestedBrandId) {
-        const { data: brand } = await supabase
+        const { data: brand, error } = await supabase
           .from("brands")
           .select("*, competitors(*)")
           .eq("id", requestedBrandId)
           .single();
-        if (brand) return brand;
+        if (!error && brand) return brand;
       }
-      const { data: defaultBrand } = await supabase
+      const { data: defaultBrand, error: defErr } = await supabase
         .from("brands")
         .select("*, competitors(*)")
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
-      if (defaultBrand) return defaultBrand;
+      if (!defErr && defaultBrand) return defaultBrand;
     } catch (err) {
       console.warn("Supabase fetch brands error, falling back to local memory store:", err);
     }
@@ -51,7 +105,10 @@ export async function listBrands(): Promise<Brand[]> {
         .from("brands")
         .select("*, competitors(*)")
         .order("created_at", { ascending: false });
-      if (!error && data && data.length > 0) return data;
+      if (!error && data) {
+        // If Supabase tables are ready and returned records, return them!
+        if (data.length > 0) return data;
+      }
     } catch (err) {
       console.warn("Supabase listBrands error:", err);
     }
@@ -139,6 +196,75 @@ export async function createBrand(brandData: {
   return memoryStore.saveBrand(newBrand);
 }
 
+export async function updateBrand(
+  id: string,
+  brandData: {
+    name?: string;
+    website?: string;
+    industry?: string;
+    country?: string;
+    language?: string;
+    description?: string;
+    competitors?: string[];
+  }
+): Promise<Brand | null> {
+  const supabase = createAdminClient();
+  if (supabase) {
+    try {
+      const updatePayload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (brandData.name) updatePayload.name = brandData.name;
+      if (brandData.website) updatePayload.website = brandData.website;
+      if (brandData.industry) updatePayload.industry = brandData.industry;
+      if (brandData.country) updatePayload.country = brandData.country;
+      if (brandData.language) updatePayload.language = brandData.language;
+      if (brandData.description !== undefined) updatePayload.description = brandData.description;
+
+      const { data: updatedBrand, error } = await supabase
+        .from("brands")
+        .update(updatePayload)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (!error && updatedBrand) {
+        if (brandData.competitors) {
+          // Replace competitors
+          await supabase.from("competitors").delete().eq("brand_id", id);
+          if (brandData.competitors.length > 0) {
+            await supabase.from("competitors").insert(
+              brandData.competitors.map((name) => ({
+                brand_id: id,
+                name,
+              }))
+            );
+          }
+        }
+        return updatedBrand;
+      }
+    } catch (err) {
+      console.warn("Supabase updateBrand error, falling back to memoryStore:", err);
+    }
+  }
+
+  const existing = memoryStore.getBrand(id);
+  if (!existing) return null;
+
+  const updated = memoryStore.updateBrand(id, {
+    ...brandData,
+    competitors: brandData.competitors
+      ? brandData.competitors.map((c, i) => ({
+          id: `comp_${Date.now()}_${i}`,
+          brand_id: id,
+          name: c,
+        }))
+      : existing.competitors,
+  });
+
+  return updated;
+}
+
 export async function deleteBrand(id: string): Promise<boolean> {
   const supabase = createAdminClient();
   if (supabase) {
@@ -196,29 +322,41 @@ export async function createPrompt(prompt: {
   return memoryStore.savePrompt(newPrompt);
 }
 
-export async function togglePromptActive(promptId: string, isActive: boolean): Promise<Prompt | null> {
+export async function updatePrompt(
+  promptId: string,
+  updates: {
+    query_text?: string;
+    category?: Prompt["category"];
+    is_active?: boolean;
+  }
+): Promise<Prompt | null> {
   const supabase = createAdminClient();
   if (supabase) {
     try {
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.query_text !== undefined) payload.query_text = updates.query_text;
+      if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.is_active !== undefined) payload.is_active = updates.is_active;
+
       const { data } = await supabase
         .from("prompts")
-        .update({ is_active: isActive })
+        .update(payload)
         .eq("id", promptId)
         .select()
         .single();
       if (data) return data;
     } catch (err) {
-      console.warn("Supabase togglePromptActive error:", err);
+      console.warn("Supabase updatePrompt error:", err);
     }
   }
 
-  const all = memoryStore.getPrompts(memoryStore.getBrands()[0]?.id || "");
-  const p = all.find((item) => item.id === promptId);
-  if (p) {
-    p.is_active = isActive;
-    return p;
-  }
-  return null;
+  return memoryStore.updatePrompt(promptId, updates);
+}
+
+export async function togglePromptActive(promptId: string, isActive: boolean): Promise<Prompt | null> {
+  return updatePrompt(promptId, { is_active: isActive });
 }
 
 export async function deletePrompt(promptId: string): Promise<boolean> {
@@ -324,4 +462,3 @@ export async function listRecommendations(brandId: string): Promise<GEORecommend
   }
   return memoryStore.getRecommendations(brandId);
 }
-

@@ -6,10 +6,12 @@ import {
   Plus,
   Globe,
   Trash2,
+  Edit2,
   CheckCircle2,
   Users2,
   Search,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +26,7 @@ export default function BrandsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Form State
+  // Form State (for Add)
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [industry, setIndustry] = useState("");
@@ -32,6 +34,16 @@ export default function BrandsPage() {
   const [language, setLanguage] = useState("English");
   const [description, setDescription] = useState("");
   const [competitorsInput, setCompetitorsInput] = useState("");
+
+  // Edit State
+  const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editWebsite, setEditWebsite] = useState("");
+  const [editIndustry, setEditIndustry] = useState("");
+  const [editCountry, setEditCountry] = useState("");
+  const [editLanguage, setEditLanguage] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCompetitors, setEditCompetitors] = useState("");
 
   const loadBrands = () => {
     setLoading(true);
@@ -102,6 +114,59 @@ export default function BrandsPage() {
     }
   };
 
+  const handleStartEdit = (brand: Brand) => {
+    setEditingBrand(brand);
+    setEditName(brand.name);
+    setEditWebsite(brand.website);
+    setEditIndustry(brand.industry);
+    setEditCountry(brand.country);
+    setEditLanguage(brand.language);
+    setEditDescription(brand.description || "");
+    setEditCompetitors((brand.competitors || []).map((c) => c.name).join(", "));
+    setErrorMsg(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBrand) return;
+
+    setSubmitting(true);
+    setErrorMsg(null);
+
+    const competitors = editCompetitors
+      .split(",")
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+
+    try {
+      const res = await fetch(`/api/brands/${editingBrand.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          website: editWebsite,
+          industry: editIndustry,
+          country: editCountry,
+          language: editLanguage,
+          description: editDescription,
+          competitors,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update brand");
+      }
+
+      setEditingBrand(null);
+      loadBrands();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to update brand");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleDeleteBrand = async (id: string) => {
     if (!confirm("Are you sure you want to delete this brand and its associated prompts?")) return;
     try {
@@ -122,7 +187,10 @@ export default function BrandsPage() {
           </p>
         </div>
         <Button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => {
+            setShowAddForm(!showAddForm);
+            setEditingBrand(null);
+          }}
           variant="primary"
           size="sm"
           className="gap-1.5 text-xs"
@@ -131,6 +199,108 @@ export default function BrandsPage() {
           <span>{showAddForm ? "Cancel" : "Add Brand"}</span>
         </Button>
       </div>
+
+      {/* Edit Brand Modal */}
+      {editingBrand && (
+        <Card className="border-indigo-500/40 bg-[#0e131d] shadow-xl shadow-indigo-950/30">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-white">Edit Brand: {editingBrand.name}</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-slate-400 hover:text-white"
+                onClick={() => setEditingBrand(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription className="text-xs text-slate-400">
+              Update details, target region, and competitors.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {errorMsg && (
+                <div className="rounded-lg border border-rose-900/50 bg-rose-950/30 p-3 text-xs text-rose-300">
+                  {errorMsg}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Brand Name *</label>
+                  <Input
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Website URL *</label>
+                  <Input
+                    required
+                    type="url"
+                    value={editWebsite}
+                    onChange={(e) => setEditWebsite(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Industry / Sector *</label>
+                  <Input
+                    required
+                    value={editIndustry}
+                    onChange={(e) => setEditIndustry(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Target Country</label>
+                  <Input
+                    value={editCountry}
+                    onChange={(e) => setEditCountry(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">
+                  Competitors (comma separated)
+                </label>
+                <Input
+                  value={editCompetitors}
+                  onChange={(e) => setEditCompetitors(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Description</label>
+                <Textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={2}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditingBrand(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={submitting}>
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Onboarding / Add Brand Form */}
       {showAddForm && (
@@ -262,15 +432,26 @@ export default function BrandsPage() {
                     <ExternalLink className="h-2.5 w-2.5" />
                   </a>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-slate-400 hover:text-rose-400"
-                  onClick={() => handleDeleteBrand(brand.id)}
-                  title="Delete brand"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-indigo-300"
+                    onClick={() => handleStartEdit(brand)}
+                    title="Edit brand"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-rose-400"
+                    onClick={() => handleDeleteBrand(brand.id)}
+                    title="Delete brand"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
@@ -320,4 +501,3 @@ export default function BrandsPage() {
     </div>
   );
 }
-

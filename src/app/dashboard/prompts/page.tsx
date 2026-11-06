@@ -6,11 +6,13 @@ import {
   Sparkles,
   Plus,
   Trash2,
+  Edit2,
   Filter,
   Check,
   ToggleLeft,
   ToggleRight,
   RefreshCw,
+  X,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +40,11 @@ export default function PromptsPage() {
   const [queryText, setQueryText] = useState("");
   const [category, setCategory] = useState<PromptCategory>("Discovery");
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit Prompt State
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [editQueryText, setEditQueryText] = useState("");
+  const [editCategory, setEditCategory] = useState<PromptCategory>("Discovery");
 
   // Gemini AI Prompt Generator
   const [isGenerating, setIsGenerating] = useState(false);
@@ -99,6 +106,39 @@ export default function PromptsPage() {
       }
     } catch (err) {
       console.error("Error creating prompt:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStartEditPrompt = (prompt: Prompt) => {
+    setEditingPrompt(prompt);
+    setEditQueryText(prompt.query_text);
+    setEditCategory(prompt.category);
+  };
+
+  const handleSaveEditPrompt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPrompt) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/prompts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingPrompt.id,
+          query_text: editQueryText,
+          category: editCategory,
+        }),
+      });
+
+      if (res.ok) {
+        setEditingPrompt(null);
+        loadPrompts(selectedBrandId);
+      }
+    } catch (err) {
+      console.error("Error updating prompt:", err);
     } finally {
       setSubmitting(false);
     }
@@ -276,6 +316,69 @@ export default function PromptsPage() {
         </Card>
       )}
 
+      {/* Edit Prompt Form */}
+      {editingPrompt && (
+        <Card className="border-indigo-500/40 bg-[#0e131d] shadow-lg shadow-indigo-950/30">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-white">Edit Search Prompt</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-slate-400 hover:text-white"
+                onClick={() => setEditingPrompt(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription className="text-xs text-slate-400">
+              Modify the customer search query text or category.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSaveEditPrompt} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Customer Search Query *</label>
+                <Input
+                  required
+                  value={editQueryText}
+                  onChange={(e) => setEditQueryText(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Category</label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value as PromptCategory)}
+                  className="w-full rounded-lg border border-[#2d333b] bg-[#0d1117] px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditingPrompt(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={submitting}>
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Manual Add Form */}
       {showAddForm && (
         <Card className="border-[#1e242c] bg-[#0c1015]">
@@ -394,6 +497,16 @@ export default function PromptsPage() {
                       <span className="text-slate-500 font-mono text-[11px]">Inactive</span>
                     )}
                   </button>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-slate-400 hover:text-indigo-300"
+                    onClick={() => handleStartEditPrompt(prompt)}
+                    title="Edit prompt"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
 
                   <Button
                     variant="ghost"

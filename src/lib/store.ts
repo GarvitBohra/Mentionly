@@ -331,6 +331,15 @@ export const memoryStore = {
   deleteBrand: (id: string) => {
     brandsStore = brandsStore.filter((b) => b.id !== id);
   },
+  updateBrand: (id: string, updates: Partial<Brand>) => {
+    const brand = brandsStore.find((b) => b.id === id);
+    if (brand) {
+      Object.assign(brand, updates);
+      brand.updated_at = new Date().toISOString();
+      return brand;
+    }
+    return null;
+  },
 
   getPrompts: (brandId: string) => promptsStore.filter((p) => p.brand_id === brandId),
   savePrompt: (prompt: Prompt) => {
@@ -344,6 +353,15 @@ export const memoryStore = {
   },
   deletePrompt: (id: string) => {
     promptsStore = promptsStore.filter((p) => p.id !== id);
+  },
+  updatePrompt: (id: string, updates: Partial<Prompt>) => {
+    const prompt = promptsStore.find((p) => p.id === id);
+    if (prompt) {
+      Object.assign(prompt, updates);
+      prompt.updated_at = new Date().toISOString();
+      return prompt;
+    }
+    return null;
   },
 
   getRuns: (brandId: string) =>

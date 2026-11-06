@@ -21,6 +21,8 @@ export default function CompetitorsPage() {
   const [brand, setBrand] = useState<Brand | null>(null);
   const [competitors, setCompetitors] = useState<CompetitorData[]>([]);
   const [totalPrompts, setTotalPrompts] = useState(0);
+  const [brandMentionRate, setBrandMentionRate] = useState<number>(0);
+  const [brandRecommendationRate, setBrandRecommendationRate] = useState<number>(0);
   const [hasData, setHasData] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +33,8 @@ export default function CompetitorsPage() {
         setBrand(data.brand || null);
         setCompetitors(data.competitors || []);
         setTotalPrompts(data.total_prompts || 0);
+        setBrandMentionRate(data.brand_mention_rate ?? 0);
+        setBrandRecommendationRate(data.brand_recommendation_rate ?? 0);
         setHasData(data.has_monitoring_data || false);
         setLoading(false);
       })
@@ -163,11 +167,14 @@ export default function CompetitorsPage() {
                     <span className="h-2 w-2 rounded-full bg-indigo-500" />
                     <span>{brand?.name} (Your Brand)</span>
                   </td>
-                  <td className="px-4 py-3.5 font-mono">60.0%</td>
-                  <td className="px-4 py-3.5 font-mono">40.0%</td>
+                  <td className="px-4 py-3.5 font-mono">{brandMentionRate}%</td>
+                  <td className="px-4 py-3.5 font-mono">{brandRecommendationRate}%</td>
                   <td className="px-4 py-3.5">
                     <div className="h-1.5 w-32 rounded-full bg-[#1b212b] overflow-hidden">
-                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: "60%" }} />
+                      <div
+                        className="h-full bg-indigo-500 rounded-full"
+                        style={{ width: `${Math.min(100, Math.max(0, brandMentionRate))}%` }}
+                      />
                     </div>
                   </td>
                 </tr>
