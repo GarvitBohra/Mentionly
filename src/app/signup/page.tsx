@@ -63,8 +63,20 @@ export default function SignupPage() {
         <CardContent>
           <form onSubmit={handleSignup} className="space-y-4">
             {errorMsg && (
-              <div className="rounded-lg border border-rose-900/50 bg-rose-950/30 p-2.5 text-xs text-rose-300">
-                {errorMsg}
+              <div className="rounded-lg border border-rose-900/50 bg-rose-950/30 p-3 text-xs text-rose-300 space-y-1.5">
+                <span className="font-semibold block">{errorMsg}</span>
+                {errorMsg.toLowerCase().includes("rate limit") && (
+                  <p className="text-[11px] text-slate-300 border-t border-rose-900/40 pt-1.5">
+                    <strong>Quick Fix:</strong> Supabase free email rate limit is 3/hour. In your{" "}
+                    <span className="text-indigo-400 font-mono">Supabase Dashboard</span> &rarr;{" "}
+                    <strong>Authentication</strong> &rarr; <strong>Providers</strong> &rarr;{" "}
+                    <strong>Email</strong> &rarr; toggle <strong>OFF &quot;Confirm email&quot;</strong> and save.{" "}
+                    Or if you already signed up,{" "}
+                    <Link href="/login" className="text-indigo-400 underline font-medium">
+                      sign in here
+                    </Link>.
+                  </p>
+                )}
               </div>
             )}
 
