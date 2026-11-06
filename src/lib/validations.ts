@@ -2,12 +2,26 @@ import { z } from "zod";
 
 export const brandSchema = z.object({
   name: z.string().min(1, "Brand name is required").max(100),
-  website: z.string().min(1).transform((v) => (v.startsWith("http://") || v.startsWith("https://") ? v : `https://${v}`)),
-  industry: z.string().min(1, "Industry is required").default("Technology"),
-  country: z.string().default("Global"),
-  language: z.string().default("English"),
+  website: z
+    .string()
+    .optional()
+    .default("mentionly.ai")
+    .transform((v) => {
+      const trimmed = (v || "").trim();
+      if (!trimmed) return "https://mentionly.ai";
+      return trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        ? trimmed
+        : `https://${trimmed}`;
+    }),
+  industry: z.string().optional().default("Technology"),
+  country: z.string().optional().default("Global"),
+  language: z.string().optional().default("English"),
   description: z.string().max(1000).optional().default(""),
-  competitors: z.array(z.string().min(1)).default([]),
+  competitors: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .transform((arr) => arr.map((c) => c.trim()).filter((c) => c.length > 0)),
 });
 
 export const promptGenerationSchema = z.object({

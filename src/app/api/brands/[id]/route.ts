@@ -4,13 +4,25 @@ import { getAuthenticatedUser, unauthorizedResponse, forbiddenResponse } from "@
 import { z } from "zod";
 
 const updateBrandSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
-  website: z.string().url().optional(),
-  industry: z.string().min(2).max(100).optional(),
-  country: z.string().min(2).optional(),
-  language: z.string().min(2).optional(),
+  name: z.string().min(1).max(100).optional(),
+  website: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return undefined;
+      const trimmed = v.trim();
+      return trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        ? trimmed
+        : `https://${trimmed}`;
+    }),
+  industry: z.string().optional(),
+  country: z.string().optional(),
+  language: z.string().optional(),
   description: z.string().max(1000).optional(),
-  competitors: z.array(z.string().min(1)).optional(),
+  competitors: z
+    .array(z.string())
+    .optional()
+    .transform((arr) => arr?.map((c) => c.trim()).filter((c) => c.length > 0)),
 });
 
 export async function GET(

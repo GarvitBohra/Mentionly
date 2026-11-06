@@ -58,9 +58,12 @@ export const memoryStore = {
   },
 
   getBrand: (id: string, organizationId?: string) => {
-    return brandsStore.find(
-      (b) => b.id === id && (!organizationId || b.organization_id === organizationId)
-    );
+    const brand = brandsStore.find((b) => b.id === id);
+    if (!brand) return undefined;
+    if (organizationId && brand.organization_id !== organizationId) {
+      return undefined;
+    }
+    return brand;
   },
 
   saveBrand: (brand: Brand) => {

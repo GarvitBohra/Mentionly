@@ -68,28 +68,25 @@ export default function BrandsPage() {
     setSubmitting(true);
     setErrorMsg(null);
 
-    const competitors = competitorsInput
+    const parsedCompetitors = competitorsInput
       .split(",")
       .map((c) => c.trim())
       .filter((c) => c.length > 0);
 
-    if (competitors.length === 0) {
-      setErrorMsg("Please enter at least one competitor name.");
-      setSubmitting(false);
-      return;
-    }
+    const competitors =
+      parsedCompetitors.length > 0 ? parsedCompetitors : ["Otterly.AI", "Profound"];
 
     try {
       const res = await fetch("/api/brands", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          website,
-          industry,
-          country,
-          language,
-          description,
+          name: name.trim() || "Mentionly",
+          website: website.trim() || "https://mentionly.ai",
+          industry: industry.trim() || "AI Search Visibility",
+          country: country.trim() || "Global",
+          language: language.trim() || "English",
+          description: description.trim(),
           competitors,
         }),
       });
@@ -97,6 +94,11 @@ export default function BrandsPage() {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Failed to create brand");
+      }
+
+      // Immediately append brand to state
+      if (data.brand) {
+        setBrands((prev) => [data.brand, ...prev.filter((b) => b.id !== data.brand.id)]);
       }
 
       // Reset form
@@ -143,13 +145,13 @@ export default function BrandsPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: editName,
-          website: editWebsite,
-          industry: editIndustry,
-          country: editCountry,
-          language: editLanguage,
-          description: editDescription,
-          competitors,
+          name: editName.trim() || editingBrand.name,
+          website: editWebsite.trim() || editingBrand.website,
+          industry: editIndustry.trim() || editingBrand.industry,
+          country: editCountry.trim() || editingBrand.country,
+          language: editLanguage.trim() || editingBrand.language,
+          description: editDescription.trim(),
+          competitors: competitors.length > 0 ? competitors : ["Otterly.AI", "Profound"],
         }),
       });
 
@@ -158,6 +160,9 @@ export default function BrandsPage() {
         throw new Error(data.error || "Failed to update brand");
       }
 
+      if (data.brand) {
+        setBrands((prev) => prev.map((b) => (b.id === data.brand.id ? data.brand : b)));
+      }
       setEditingBrand(null);
       loadBrands();
     } catch (err: any) {
@@ -238,10 +243,9 @@ export default function BrandsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Website URL *</label>
+                  <label className="text-xs font-medium text-slate-300">Website URL</label>
                   <Input
-                    required
-                    type="url"
+                    type="text"
                     value={editWebsite}
                     onChange={(e) => setEditWebsite(e.target.value)}
                   />
@@ -332,20 +336,18 @@ export default function BrandsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Website URL *</label>
+                  <label className="text-xs font-medium text-slate-300">Website URL</label>
                   <Input
-                    required
-                    type="url"
-                    placeholder="https://acme.com"
+                    type="text"
+                    placeholder="https://mentionly.ai"
                     value={website}
                     onChange={(e) => setWebsite(e.target.value)}
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Industry / Sector *</label>
+                  <label className="text-xs font-medium text-slate-300">Industry / Sector</label>
                   <Input
-                    required
                     placeholder="e.g. B2B SaaS, CRM, FinTech, CyberSecurity"
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
@@ -364,11 +366,10 @@ export default function BrandsPage() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-300">
-                  Key Competitors (comma separated) *
+                  Key Competitors (comma separated)
                 </label>
                 <Input
-                  required
-                  placeholder="Competitor A, Competitor B, Competitor C"
+                  placeholder="e.g. Otterly.AI, Profound, Peec.ai"
                   value={competitorsInput}
                   onChange={(e) => setCompetitorsInput(e.target.value)}
                 />
