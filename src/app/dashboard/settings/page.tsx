@@ -74,11 +74,11 @@ export default function SettingsPage() {
                 <span className="font-semibold text-slate-200">Google Gemini API</span>
                 {health?.gemini.isConfigured ? (
                   <Badge variant="success" className="text-[10px]">
-                    Key Detected
+                    API Key Configured
                   </Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-[10px]">
-                    Demo Fallback Active
+                  <Badge variant="destructive" className="text-[10px]">
+                    API Key Missing
                   </Badge>
                 )}
               </div>
