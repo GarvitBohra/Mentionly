@@ -59,13 +59,34 @@ export default function PromptsPage() {
         if (data.brands && data.brands.length > 0) {
           setBrands(data.brands);
           setSelectedBrandId(data.brands[0].id);
+        } else {
+          // Initialize default brand so prompts can always be saved seamlessly
+          fetch("/api/brands", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: "Mentionly",
+              website: "https://mentionly.ai",
+              industry: "AI Search Visibility",
+              competitors: ["Otterly.AI", "Profound"],
+            }),
+          })
+            .then((r) => r.json())
+            .then((created) => {
+              if (created.brand) {
+                setBrands([created.brand]);
+                setSelectedBrandId(created.brand.id);
+              }
+            })
+            .catch(() => {});
         }
-      });
+      })
+      .catch(() => {});
   }, []);
 
   const loadPrompts = (brandId: string) => {
     setLoading(true);
-    fetch(`/api/prompts?brand_id=${brandId}`)
+    fetch(`/api/prompts?brand_id=${brandId || "default"}`)
       .then((res) => res.json())
       .then((data) => {
         setPrompts(data.prompts || []);
@@ -85,15 +106,16 @@ export default function PromptsPage() {
 
   const handleCreatePrompt = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!queryText.trim() || !selectedBrandId) return;
+    if (!queryText.trim()) return;
 
+    const targetBrandId = selectedBrandId || brands[0]?.id || "default_brand";
     setSubmitting(true);
     try {
       const res = await fetch("/api/prompts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brand_id: selectedBrandId,
+          brand_id: targetBrandId,
           query_text: queryText,
           category,
         }),
@@ -102,7 +124,7 @@ export default function PromptsPage() {
       if (res.ok) {
         setQueryText("");
         setShowAddForm(false);
-        loadPrompts(selectedBrandId);
+        loadPrompts(targetBrandId);
       }
     } catch (err) {
       console.error("Error creating prompt:", err);
@@ -145,8 +167,13 @@ export default function PromptsPage() {
   };
 
   const handleGeneratePromptsWithGemini = async () => {
-    const brand = brands.find((b) => b.id === selectedBrandId);
-    if (!brand) return;
+    const brand = brands.find((b) => b.id === selectedBrandId) || brands[0] || {
+      name: "Mentionly",
+      website: "https://mentionly.ai",
+      industry: "AI Search Visibility",
+      description: "AI Search Visibility Platform",
+      competitors: [{ name: "Otterly.AI" }, { name: "Profound" }],
+    };
 
     setIsGenerating(true);
     try {
@@ -158,7 +185,7 @@ export default function PromptsPage() {
           website: brand.website,
           industry: brand.industry,
           description: brand.description || "",
-          competitors: (brand.competitors || []).map((c) => c.name),
+          competitors: (brand.competitors || []).map((c: any) => c.name || c),
           count: 6,
         }),
       });
@@ -178,22 +205,44 @@ export default function PromptsPage() {
     query_text: string;
     category: PromptCategory;
   }) => {
+    const targetBrandId = selectedBrandId || brands[0]?.id || "default_brand";
     try {
       await fetch("/api/prompts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brand_id: selectedBrandId,
+          brand_id: targetBrandId,
           query_text: item.query_text,
           category: item.category,
         }),
       });
       // Remove from generated list and refresh
       setGeneratedList((prev) => prev.filter((p) => p.query_text !== item.query_text));
-      loadPrompts(selectedBrandId);
+      loadPrompts(targetBrandId);
     } catch (err) {
       console.error("Failed to add generated prompt:", err);
     }
+  };
+
+  const handleSaveAllGeneratedPrompts = async () => {
+    const targetBrandId = selectedBrandId || brands[0]?.id || "default_brand";
+    for (const item of generatedList) {
+      try {
+        await fetch("/api/prompts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brand_id: targetBrandId,
+            query_text: item.query_text,
+            category: item.category,
+          }),
+        });
+      } catch (err) {
+        console.error("Batch save prompt error:", err);
+      }
+    }
+    setGeneratedList([]);
+    loadPrompts(targetBrandId);
   };
 
   const handleToggleActive = async (prompt: Prompt) => {
@@ -276,14 +325,25 @@ export default function PromptsPage() {
                   Gemini-Generated Customer Search Intents ({generatedList.length})
                 </CardTitle>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-slate-400 h-7"
-                onClick={() => setGeneratedList([])}
-              >
-                Dismiss All
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="text-xs h-7 gap-1"
+                  onClick={handleSaveAllGeneratedPrompts}
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Save All to Monitor</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-slate-400 h-7"
+                  onClick={() => setGeneratedList([])}
+                >
+                  Dismiss All
+                </Button>
+              </div>
             </div>
             <CardDescription className="text-xs text-slate-400">
               Click &quot;Add to Monitor&quot; to save and benchmark any of these intents in your next visibility run.

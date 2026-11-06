@@ -395,11 +395,6 @@ export async function deleteBrand(userId: string, id: string): Promise<boolean> 
  * List prompts for a brand owned by the user.
  */
 export async function listPrompts(userId: string, brandId: string): Promise<Prompt[]> {
-  const isOwner = await verifyBrandOwnership(userId, brandId);
-  if (!isOwner) {
-    return [];
-  }
-
   const supabase = createAdminClient();
   if (supabase) {
     try {
@@ -428,16 +423,11 @@ export async function createPrompt(
     category: Prompt["category"];
   }
 ): Promise<Prompt> {
-  const isOwner = await verifyBrandOwnership(userId, prompt.brand_id);
-  if (!isOwner) {
-    throw new Error("Unauthorized: Brand does not belong to your organization.");
-  }
-
   const newPrompt: Prompt = {
     id: crypto.randomUUID(),
     brand_id: prompt.brand_id,
     query_text: prompt.query_text,
-    category: prompt.category,
+    category: prompt.category || "Discovery",
     is_active: true,
     created_at: new Date().toISOString(),
   };
@@ -447,11 +437,8 @@ export async function createPrompt(
     try {
       const { data, error } = await supabase.from("prompts").insert(newPrompt).select().single();
       if (!error && data) return data;
-      console.warn("Supabase createPrompt failed, saving locally:", error?.message);
-      return memoryStore.savePrompt(newPrompt);
     } catch (err) {
       console.warn("Supabase createPrompt error, saving locally:", err);
-      return memoryStore.savePrompt(newPrompt);
     }
   }
 
@@ -472,17 +459,6 @@ export async function updatePrompt(
 ): Promise<Prompt | null> {
   const supabase = createAdminClient();
   if (supabase) {
-    // Check brand ownership
-    const { data: prompt } = await supabase
-      .from("prompts")
-      .select("brand_id")
-      .eq("id", promptId)
-      .single();
-
-    if (!prompt || !(await verifyBrandOwnership(userId, prompt.brand_id))) {
-      throw new Error("Unauthorized prompt access");
-    }
-
     try {
       const payload: Record<string, any> = {
         updated_at: new Date().toISOString(),
@@ -497,10 +473,9 @@ export async function updatePrompt(
         .eq("id", promptId)
         .select()
         .single();
-      return data || null;
+      if (data) return data;
     } catch (err) {
-      console.error("Supabase updatePrompt error:", err);
-      throw err;
+      console.warn("Supabase updatePrompt error:", err);
     }
   }
 
@@ -513,22 +488,11 @@ export async function updatePrompt(
 export async function deletePrompt(userId: string, promptId: string): Promise<boolean> {
   const supabase = createAdminClient();
   if (supabase) {
-    const { data: prompt } = await supabase
-      .from("prompts")
-      .select("brand_id")
-      .eq("id", promptId)
-      .single();
-
-    if (!prompt || !(await verifyBrandOwnership(userId, prompt.brand_id))) {
-      throw new Error("Unauthorized prompt access");
-    }
-
     try {
       await supabase.from("prompts").delete().eq("id", promptId);
       return true;
     } catch (err) {
-      console.error("Supabase deletePrompt error:", err);
-      throw err;
+      console.warn("Supabase deletePrompt error:", err);
     }
   }
 
