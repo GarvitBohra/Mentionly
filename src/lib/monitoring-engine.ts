@@ -1,4 +1,4 @@
-import { executeVisibilityQuery } from "./gemini";
+import { executeVisibilityQuery, formatGeminiError } from "./gemini";
 import { analyzeMentionResponse } from "./analysis";
 import { calculateVisibilityMetrics } from "./scoring";
 import { memoryStore } from "./store";
@@ -41,8 +41,11 @@ export async function executeMonitoringRun(params: {
     }
   }
 
-  // Cap at max 10 prompts per run for MVP safety to prevent quota burn
+  // Cap at max 10 prompts per run for safety to prevent quota burn
   const cappedPrompts = prompts.slice(0, 10);
+  let successfulPromptsCount = 0;
+  let failedPromptsCount = 0;
+  let lastFailureReason = "";
 
   for (let i = 0; i < cappedPrompts.length; i++) {
     const promptItem = cappedPrompts[i];
@@ -81,6 +84,7 @@ export async function executeMonitoringRun(params: {
 
       collectedResults.push(resultRecord);
       collectedCitations.push(...analysis.citations);
+      successfulPromptsCount++;
 
       if (supabase) {
         await supabase.from("monitoring_results").insert(resultRecord);
@@ -101,16 +105,20 @@ export async function executeMonitoringRun(params: {
         }
         await supabase
           .from("monitoring_runs")
-          .update({ completed_prompts: i + 1 })
+          .update({ completed_prompts: successfulPromptsCount })
           .eq("id", runId);
       } else {
         memoryStore.saveResult(resultRecord);
         analysis.citations.forEach((c) => memoryStore.saveCitation(c));
         const r = memoryStore.getRun(runId);
-        if (r) r.completed_prompts = i + 1;
+        if (r) r.completed_prompts = successfulPromptsCount;
       }
     } catch (err: any) {
-      console.error(`Error processing prompt "${promptItem.query_text}":`, err);
+      failedPromptsCount++;
+      const formattedErr = formatGeminiError(err);
+      lastFailureReason = formattedErr;
+      console.error(`Error processing prompt "${promptItem.query_text}":`, formattedErr);
+
       const failedResult: MonitoringResult = {
         id: crypto.randomUUID(),
         run_id: runId,
@@ -122,29 +130,53 @@ export async function executeMonitoringRun(params: {
         brand_recommended: false,
         competitors_mentioned: [],
         has_grounding: false,
-        error: err?.message || "Execution failed",
+        error: formattedErr,
         created_at: new Date().toISOString(),
       };
+
       collectedResults.push(failedResult);
-      if (!supabase) {
+
+      if (supabase) {
+        // Record failed prompt result into Supabase so users can inspect errors
+        try {
+          await supabase.from("monitoring_results").insert(failedResult);
+        } catch (dbErr) {
+          console.warn("Could not insert failed result into Supabase:", dbErr);
+        }
+      } else {
         memoryStore.saveResult(failedResult);
       }
     }
   }
 
-  // 3. Compute visibility metrics
+  // 3. Compute visibility metrics strictly from successful results
   const metrics = calculateVisibilityMetrics(collectedResults, collectedCitations.length);
+
+  // 4. Determine final run status and honest error reporting
+  let finalStatus: MonitoringRun["status"] = "completed";
+  let finalErrorMessage: string | undefined = undefined;
+
+  if (successfulPromptsCount === 0) {
+    // Every prompt failed
+    finalStatus = "failed";
+    finalErrorMessage = `All ${cappedPrompts.length} prompts failed to execute. Reason: ${lastFailureReason}`;
+  } else if (failedPromptsCount > 0) {
+    // Partial success
+    finalStatus = "completed";
+    finalErrorMessage = `${failedPromptsCount} of ${cappedPrompts.length} prompts failed (${lastFailureReason}). Visibility calculated from ${successfulPromptsCount} successful response(s).`;
+  }
 
   const finalRunData: MonitoringRun = {
     id: runId,
     brand_id: brandId,
-    status: "completed",
+    status: finalStatus,
     total_prompts: cappedPrompts.length,
-    completed_prompts: cappedPrompts.length,
-    visibility_score: metrics.visibilityScore,
-    brand_mention_rate: metrics.brandMentionRate,
-    competitor_mention_rate: metrics.competitorMentionRate,
-    recommendation_rate: metrics.recommendationRate,
+    completed_prompts: successfulPromptsCount,
+    visibility_score: successfulPromptsCount > 0 ? metrics.visibilityScore : 0,
+    brand_mention_rate: successfulPromptsCount > 0 ? metrics.brandMentionRate : 0,
+    competitor_mention_rate: successfulPromptsCount > 0 ? metrics.competitorMentionRate : 0,
+    recommendation_rate: successfulPromptsCount > 0 ? metrics.recommendationRate : 0,
+    error_message: finalErrorMessage,
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
@@ -154,11 +186,13 @@ export async function executeMonitoringRun(params: {
     await supabase
       .from("monitoring_runs")
       .update({
-        status: "completed",
-        visibility_score: metrics.visibilityScore,
-        brand_mention_rate: metrics.brandMentionRate,
-        competitor_mention_rate: metrics.competitorMentionRate,
-        recommendation_rate: metrics.recommendationRate,
+        status: finalStatus,
+        completed_prompts: successfulPromptsCount,
+        visibility_score: finalRunData.visibility_score,
+        brand_mention_rate: finalRunData.brand_mention_rate,
+        competitor_mention_rate: finalRunData.competitor_mention_rate,
+        recommendation_rate: finalRunData.recommendation_rate,
+        error_message: finalErrorMessage || null,
         completed_at: new Date().toISOString(),
       })
       .eq("id", runId);
@@ -168,4 +202,3 @@ export async function executeMonitoringRun(params: {
 
   return finalRunData;
 }
-

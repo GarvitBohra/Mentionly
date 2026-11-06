@@ -259,7 +259,7 @@ export default function VisibilityMonitoringPage() {
             <div className="flex items-center gap-3">
               <h2 className="text-base font-semibold text-white">Monitoring Run Observations</h2>
               <Badge
-                variant={activeRunDetails.run.status === "completed" ? "success" : "secondary"}
+                variant={activeRunDetails.run.status === "completed" ? "success" : activeRunDetails.run.status === "failed" ? "destructive" : "secondary"}
                 className="capitalize text-[11px]"
               >
                 {activeRunDetails.run.status}
@@ -270,6 +270,25 @@ export default function VisibilityMonitoringPage() {
               {formatTimeAgo(activeRunDetails.run.created_at)})
             </span>
           </div>
+
+          {/* Error Notice Banner if run had failures or partial errors */}
+          {activeRunDetails.run.error_message && (
+            <div className={`rounded-xl border p-3.5 text-xs flex items-start gap-2.5 ${
+              activeRunDetails.run.status === "failed" 
+                ? "border-rose-900/60 bg-rose-950/30 text-rose-300"
+                : "border-amber-900/50 bg-amber-950/20 text-amber-300"
+            }`}>
+              <AlertCircle className={`h-4 w-4 shrink-0 mt-0.5 ${
+                activeRunDetails.run.status === "failed" ? "text-rose-400" : "text-amber-400"
+              }`} />
+              <div>
+                <span className="font-semibold block text-slate-200">
+                  {activeRunDetails.run.status === "failed" ? "Execution Failure" : "Partial Prompt Notice"}
+                </span>
+                <span>{activeRunDetails.run.error_message}</span>
+              </div>
+            </div>
+          )}
 
           {/* Quick Metrics from this run */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -324,13 +343,18 @@ export default function VisibilityMonitoringPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {res.brand_mentioned ? (
+                        {res.error ? (
+                          <Badge variant="destructive" className="text-[10px] gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Execution Error
+                          </Badge>
+                        ) : res.brand_mentioned ? (
                           <Badge variant="success" className="text-[10px] gap-1">
                             <CheckCircle2 className="h-3 w-3" />
                             {res.brand_recommended ? "Brand Recommended" : "Brand Mentioned"}
                           </Badge>
                         ) : (
-                          <Badge variant="destructive" className="text-[10px] gap-1">
+                          <Badge variant="secondary" className="text-[10px] gap-1 text-slate-400">
                             <AlertCircle className="h-3 w-3" />
                             Brand Not Cited
                           </Badge>
@@ -349,6 +373,16 @@ export default function VisibilityMonitoringPage() {
                         </Button>
                       </div>
                     </div>
+
+                    {/* Error message block if query failed */}
+                    {res.error && (
+                      <div className="rounded-lg bg-rose-950/20 p-2.5 text-xs text-rose-300 border border-rose-900/40">
+                        <span className="text-[10px] uppercase font-mono text-rose-400 block mb-0.5">
+                          API Error
+                        </span>
+                        {res.error}
+                      </div>
+                    )}
 
                     {/* Context snippet if mentioned */}
                     {res.mention_context && (

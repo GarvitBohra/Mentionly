@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveBrand, listMonitoringRuns, getMonitoringRun, listCitations } from "@/lib/data-service";
+import { getActiveBrand, listMonitoringRuns, getMonitoringRun } from "@/lib/data-service";
+import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { searchParams } = new URL(req.url);
     const brandId = searchParams.get("brand_id") || undefined;
 
-    const brand = await getActiveBrand(brandId);
+    const brand = await getActiveBrand(user.id, brandId);
     if (!brand) {
       return NextResponse.json({ error: "Brand not found" }, { status: 404 });
     }
 
-    const runs = await listMonitoringRuns(brand.id);
+    const runs = await listMonitoringRuns(user.id, brand.id);
     if (runs.length === 0) {
       return NextResponse.json({
         brand,
@@ -31,7 +37,7 @@ export async function GET(req: NextRequest) {
     }
 
     const latestRun = runs[0];
-    const { results } = await getMonitoringRun(latestRun.id);
+    const { results } = await getMonitoringRun(user.id, latestRun.id);
 
     const totalResults = results.length || 1;
     const competitorMap: Record<
@@ -68,17 +74,19 @@ export async function GET(req: NextRequest) {
           if (cm.position === 1) {
             competitorMap[cm.name].recommendations++;
           }
-          competitorMap[cm.name].prompts.push(res.prompt_query);
+          if (!competitorMap[cm.name].prompts.includes(res.prompt_query)) {
+            competitorMap[cm.name].prompts.push(res.prompt_query);
+          }
         }
       });
     });
 
-    const competitorsList = Object.values(competitorMap).map((item) => ({
-      name: item.name,
-      mention_count: item.mention_count,
-      mention_rate: Number(((item.mention_count / totalResults) * 100).toFixed(1)),
-      recommendation_rate: Number(((item.recommendations / totalResults) * 100).toFixed(1)),
-      top_prompts: item.prompts.slice(0, 4),
+    const competitors = Object.values(competitorMap).map((c) => ({
+      name: c.name,
+      mention_count: c.mention_count,
+      mention_rate: Number(((c.mention_count / totalResults) * 100).toFixed(1)),
+      recommendation_rate: Number(((c.recommendations / totalResults) * 100).toFixed(1)),
+      top_prompts: c.prompts.slice(0, 3),
     }));
 
     return NextResponse.json({
@@ -86,10 +94,8 @@ export async function GET(req: NextRequest) {
       brand_mention_rate: latestRun.brand_mention_rate,
       brand_recommendation_rate: latestRun.recommendation_rate,
       brand_visibility_score: latestRun.visibility_score,
-      competitors: competitorsList,
-      total_prompts: totalResults,
+      competitors,
       has_monitoring_data: true,
-      last_monitored_at: latestRun.created_at,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

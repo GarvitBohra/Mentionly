@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveBrand, updateBrand, deleteBrand } from "@/lib/data-service";
+import { getAuthenticatedUser, unauthorizedResponse, forbiddenResponse } from "@/lib/auth";
 import { z } from "zod";
 
 const updateBrandSchema = z.object({
@@ -17,8 +18,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { id } = await params;
-    const brand = await getActiveBrand(id);
+    const brand = await getActiveBrand(user.id, id);
     if (!brand) {
       return NextResponse.json({ error: "Brand not found" }, { status: 404 });
     }
@@ -33,11 +39,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { id } = await params;
     const json = await req.json();
     const validated = updateBrandSchema.parse(json);
 
-    const updated = await updateBrand(id, validated);
+    const updated = await updateBrand(user.id, id, validated);
     if (!updated) {
       return NextResponse.json({ error: "Brand not found or update failed" }, { status: 404 });
     }
@@ -46,6 +57,9 @@ export async function PATCH(
   } catch (error: any) {
     if (error.name === "ZodError") {
       return NextResponse.json({ error: error.errors[0]?.message || "Validation failed" }, { status: 400 });
+    }
+    if (error.message?.includes("Unauthorized")) {
+      return forbiddenResponse(error.message);
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -56,10 +70,18 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { id } = await params;
-    await deleteBrand(id);
+    await deleteBrand(user.id, id);
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    if (error.message?.includes("Unauthorized")) {
+      return forbiddenResponse(error.message);
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

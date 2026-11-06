@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveBrand, listCitations } from "@/lib/data-service";
+import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { searchParams } = new URL(req.url);
     const brandId = searchParams.get("brand_id") || undefined;
 
-    const brand = await getActiveBrand(brandId);
+    const brand = await getActiveBrand(user.id, brandId);
     if (!brand) {
       return NextResponse.json({ error: "Brand not found" }, { status: 404 });
     }
 
-    const citations = await listCitations(brand.id);
+    const citations = await listCitations(user.id, brand.id);
 
     // Group by domain
     const domainMap: Record<
@@ -45,4 +51,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

@@ -92,23 +92,6 @@ export default function LoginPage() {
             <Button type="submit" variant="primary" className="w-full text-xs" isLoading={loading}>
               Sign In
             </Button>
-
-            <div className="relative my-2 text-center text-[11px] text-slate-500">
-              <span className="bg-[#0c1015] px-2 relative z-10">Or evaluate directly</span>
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-[#1e242c]" />
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full text-xs gap-1.5 text-slate-300"
-              onClick={() => router.push("/dashboard")}
-            >
-              <Sparkles className="h-3 w-3 text-indigo-400" />
-              <span>Enter Demo Dashboard</span>
-            </Button>
           </form>
 
           <p className="mt-4 text-center text-xs text-slate-400">

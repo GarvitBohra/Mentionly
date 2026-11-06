@@ -9,21 +9,27 @@ import {
 import { generateGeoRecommendationsWithGemini } from "@/lib/gemini";
 import { memoryStore } from "@/lib/store";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthenticatedUser, unauthorizedResponse, forbiddenResponse } from "@/lib/auth";
 import { GEORecommendation } from "@/types";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const json = await req.json();
     const validated = recommendationGenerateSchema.parse(json);
 
-    const brand = await getActiveBrand(validated.brand_id);
+    const brand = await getActiveBrand(user.id, validated.brand_id);
     if (!brand) {
-      return NextResponse.json({ error: "Brand not found" }, { status: 404 });
+      return forbiddenResponse("Brand not found or unauthorized access");
     }
 
-    const runs = await listMonitoringRuns(brand.id);
+    const runs = await listMonitoringRuns(user.id, brand.id);
     if (runs.length === 0) {
       return NextResponse.json(
         { error: "Must run at least one AI monitoring check before generating recommendations." },
@@ -32,8 +38,8 @@ export async function POST(req: NextRequest) {
     }
 
     const latestRun = runs[0];
-    const { results } = await getMonitoringRun(latestRun.id);
-    const citations = await listCitations(brand.id);
+    const { results } = await getMonitoringRun(user.id, latestRun.id);
+    const citations = await listCitations(user.id, brand.id);
 
     const missingPrompts = results
       .filter((r) => !r.brand_mentioned)
@@ -67,8 +73,8 @@ export async function POST(req: NextRequest) {
         suggested_action: rec.suggested_action,
         priority: rec.priority,
         status: "open",
-        related_prompt: rec.related_prompt || undefined,
-        related_source: rec.related_source || undefined,
+        related_prompt: (rec as any).related_prompt || undefined,
+        related_source: (rec as any).related_source || undefined,
         created_at: new Date().toISOString(),
       };
 
@@ -97,4 +103,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

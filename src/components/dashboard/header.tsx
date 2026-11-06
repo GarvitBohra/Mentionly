@@ -27,13 +27,19 @@ export function DashboardHeader({
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>("demo@mentionly.ai");
+  const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
     fetch("/api/brands")
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 401) {
+          router.push("/login");
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (data.brands && data.brands.length > 0) {
+        if (data?.brands && data.brands.length > 0) {
           setBrands(data.brands);
           setSelectedBrand(data.brands[0]);
         }
@@ -48,7 +54,7 @@ export function DashboardHeader({
         }
       });
     }
-  }, []);
+  }, [router]);
 
   const handleSignOut = async () => {
     setUserMenuOpen(false);
@@ -79,7 +85,7 @@ export function DashboardHeader({
           >
             <Building2 className="h-3.5 w-3.5 text-indigo-400" />
             <span className="max-w-[130px] sm:max-w-[180px] truncate">
-              {selectedBrand ? selectedBrand.name : "Loading Brand..."}
+              {selectedBrand ? selectedBrand.name : brands.length === 0 ? "Select or Add Brand" : "Loading..."}
             </span>
             <ChevronDown className="h-3 w-3 text-slate-400" />
           </button>

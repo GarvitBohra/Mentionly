@@ -7,24 +7,59 @@ import {
   listCitations,
   listRecommendations,
 } from "@/lib/data-service";
+import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 import { DashboardAnalytics, PromptCategory } from "@/types";
 
 export async function GET(req: NextRequest) {
   try {
+    const { user, error: authError } = await getAuthenticatedUser(req);
+    if (!user) {
+      return unauthorizedResponse(authError || "Authentication required");
+    }
+
     const { searchParams } = new URL(req.url);
     const brandId = searchParams.get("brand_id") || undefined;
 
-    const brand = await getActiveBrand(brandId);
+    const brand = await getActiveBrand(user.id, brandId);
     if (!brand) {
-      return NextResponse.json({ error: "No brand found" }, { status: 404 });
+      // User has no brands yet - return empty dashboard state
+      const emptyAnalytics: DashboardAnalytics = {
+        is_demo: false,
+        selected_brand: {
+          id: "",
+          name: "No Brand Configured",
+          website: "",
+          industry: "",
+          country: "",
+          language: "",
+          created_at: new Date().toISOString(),
+          competitors: [],
+        },
+        kpis: {
+          visibility_score: 0,
+          brand_mention_rate: 0,
+          competitor_mention_rate: 0,
+          prompts_monitored: 0,
+          sources_discovered: 0,
+        },
+        trend: [],
+        brand_vs_competitor: [],
+        category_breakdown: [],
+        recent_runs: [],
+        top_sources: [],
+        best_prompts: [],
+        missing_prompts: [],
+        latest_recommendations: [],
+      };
+      return NextResponse.json({ analytics: emptyAnalytics });
     }
 
-    const runs = await listMonitoringRuns(brand.id);
-    const prompts = await listPrompts(brand.id);
-    const citations = await listCitations(brand.id);
-    const recommendations = await listRecommendations(brand.id);
+    const runs = await listMonitoringRuns(user.id, brand.id);
+    const prompts = await listPrompts(user.id, brand.id);
+    const citations = await listCitations(user.id, brand.id);
+    const recommendations = await listRecommendations(user.id, brand.id);
 
-    // If no runs exist, return real empty state (or indicate zero metrics)
+    // If no runs exist yet for this brand
     if (runs.length === 0) {
       const emptyAnalytics: DashboardAnalytics = {
         is_demo: false,
@@ -54,12 +89,11 @@ export async function GET(req: NextRequest) {
     }
 
     const latestRun = runs[0];
-    const latestRunData = await getMonitoringRun(latestRun.id);
+    const latestRunData = await getMonitoringRun(user.id, latestRun.id);
     const results = latestRunData.results || [];
 
     // Distinct sources
-    const domainCounts: Record<string, { count: number; brandMentions: number; sampleUrl: string }> =
-      {};
+    const domainCounts: Record<string, { count: number; brandMentions: number; sampleUrl: string }> = {};
     for (const c of citations) {
       if (!domainCounts[c.domain]) {
         domainCounts[c.domain] = { count: 0, brandMentions: 0, sampleUrl: c.url };
@@ -147,7 +181,7 @@ export async function GET(req: NextRequest) {
     const trend = runs
       .slice(0, 7)
       .reverse()
-      .map((r, i) => {
+      .map((r) => {
         const d = new Date(r.created_at);
         return {
           date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -180,10 +214,8 @@ export async function GET(req: NextRequest) {
       }))
       .slice(0, 5);
 
-    const is_demo = brand.id === "b1000000-0000-0000-0000-000000000001" && runs[0]?.id === "r1";
-
     const analytics: DashboardAnalytics = {
-      is_demo,
+      is_demo: false,
       selected_brand: brand,
       kpis: {
         visibility_score: latestRun.visibility_score,
@@ -207,4 +239,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-
