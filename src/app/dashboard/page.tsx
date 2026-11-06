@@ -71,7 +71,28 @@ export default function DashboardPage() {
     );
   }
 
-  if (!data || data.recent_runs.length === 0) {
+  if (!data || !data.selected_brand?.id) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-white">AI Search Visibility</h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Empirical monitoring of brand citations, recommendations, and search grounding.
+          </p>
+        </div>
+        <DisclaimerBanner />
+        <EmptyState
+          icon={Eye}
+          title="Get Started: Add Your Brand"
+          description="Register your brand, target website, and key competitors to start generating intent-based AI search queries."
+          actionText="Create Brand"
+          actionHref="/dashboard/brands"
+        />
+      </div>
+    );
+  }
+
+  if (data.recent_runs.length === 0) {
     return (
       <div className="space-y-6">
         <div>
@@ -84,7 +105,7 @@ export default function DashboardPage() {
         <EmptyState
           icon={Eye}
           title="No visibility monitoring checks yet"
-          description={`Run your first AI search monitoring check for ${data?.selected_brand?.name || "your brand"} to discover if Gemini cites and recommends your products.`}
+          description={`Run your first AI search monitoring check for ${data.selected_brand.name} to discover if Gemini cites and recommends your products.`}
           actionText="Run Visibility Check"
           actionHref="/dashboard/visibility"
         />

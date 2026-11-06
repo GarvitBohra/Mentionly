@@ -4,9 +4,22 @@ This document describes all existing API endpoints, HTTP methods, request payloa
 
 ---
 
-## Base URL
-- Local: `http://localhost:3000`
-- Production: `https://<your-vercel-deployment>.vercel.app`
+## Authentication & Multi-Tenant Authorization
+
+All protected API endpoints require an active Supabase user session. Authentication can be provided via:
+1. **Cookie Session**: Standard browser cookie set upon Supabase login (`sb-access-token`).
+2. **Bearer Token**: `Authorization: Bearer <access_token>` in the request headers.
+
+Unauthenticated requests to protected endpoints return:
+```json
+{
+  "error": "Authentication required. Please sign in to access this resource.",
+  "authenticated": false
+}
+```
+HTTP Status: `401 Unauthorized`
+
+All resources (brands, prompts, monitoring runs, citations, recommendations) are strictly scoped to the authenticated user's organization (`organization_members`). Users cannot access, query, or mutate resources belonging to other tenants (returns `403 Forbidden` or `404 Not Found`).
 
 ---
 

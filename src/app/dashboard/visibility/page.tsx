@@ -229,11 +229,10 @@ export default function VisibilityMonitoringPage() {
               {prompts.map((prompt) => (
                 <label
                   key={prompt.id}
-                  className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-xs cursor-pointer transition-colors ${
-                    selectedPromptIds.includes(prompt.id)
+                  className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-xs cursor-pointer transition-colors ${selectedPromptIds.includes(prompt.id)
                       ? "border-indigo-600/40 bg-indigo-950/20 text-slate-200"
                       : "border-[#1e242c] bg-[#10141c] text-slate-400 hover:border-slate-700"
-                  }`}
+                    }`}
                 >
                   <input
                     type="checkbox"
@@ -273,14 +272,12 @@ export default function VisibilityMonitoringPage() {
 
           {/* Error Notice Banner if run had failures or partial errors */}
           {activeRunDetails.run.error_message && (
-            <div className={`rounded-xl border p-3.5 text-xs flex items-start gap-2.5 ${
-              activeRunDetails.run.status === "failed" 
+            <div className={`rounded-xl border p-3.5 text-xs flex items-start gap-2.5 ${activeRunDetails.run.status === "failed"
                 ? "border-rose-900/60 bg-rose-950/30 text-rose-300"
                 : "border-amber-900/50 bg-amber-950/20 text-amber-300"
-            }`}>
-              <AlertCircle className={`h-4 w-4 shrink-0 mt-0.5 ${
-                activeRunDetails.run.status === "failed" ? "text-rose-400" : "text-amber-400"
-              }`} />
+              }`}>
+              <AlertCircle className={`h-4 w-4 shrink-0 mt-0.5 ${activeRunDetails.run.status === "failed" ? "text-rose-400" : "text-amber-400"
+                }`} />
               <div>
                 <span className="font-semibold block text-slate-200">
                   {activeRunDetails.run.status === "failed" ? "Execution Failure" : "Partial Prompt Notice"}
@@ -325,9 +322,8 @@ export default function VisibilityMonitoringPage() {
               return (
                 <Card
                   key={res.id}
-                  className={`border-[#1e242c] bg-[#0c1015] transition-all ${
-                    res.brand_mentioned ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-slate-700"
-                  }`}
+                  className={`border-[#1e242c] bg-[#0c1015] transition-all ${res.brand_mentioned ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-slate-700"
+                    }`}
                 >
                   <CardContent className="p-4 space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -401,11 +397,10 @@ export default function VisibilityMonitoringPage() {
                         {res.competitors_mentioned.map((comp, idx) => (
                           <span
                             key={idx}
-                            className={`px-1.5 py-0.5 rounded border text-[10px] font-mono ${
-                              comp.mentioned
+                            className={`px-1.5 py-0.5 rounded border text-[10px] font-mono ${comp.mentioned
                                 ? "bg-amber-950/40 border-amber-800/40 text-amber-300"
                                 : "bg-[#141922] border-[#222a36] text-slate-500 line-through"
-                            }`}
+                              }`}
                           >
                             {comp.name} {comp.position ? `(#${comp.position})` : ""}
                           </span>
@@ -450,11 +445,10 @@ export default function VisibilityMonitoringPage() {
               <div
                 key={r.id}
                 onClick={() => loadRunDetails(r.id)}
-                className={`flex items-center justify-between rounded-lg border p-3 text-xs cursor-pointer transition-colors ${
-                  activeRunDetails?.run.id === r.id
+                className={`flex items-center justify-between rounded-lg border p-3 text-xs cursor-pointer transition-colors ${activeRunDetails?.run.id === r.id
                     ? "border-indigo-600/40 bg-indigo-950/20"
                     : "border-[#1e242c] bg-[#10141c] hover:bg-[#151b24]"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <Badge variant="secondary" className="capitalize text-[10px]">
