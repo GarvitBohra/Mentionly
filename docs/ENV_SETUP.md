@@ -87,3 +87,4 @@ Mentionly contains an automated memory fallback store (`src/lib/store.ts`). If A
 - The platform automatically operates in **Demo Mode**, displaying sample brands and pre-calculated baseline runs.
 - The UI clearly displays a **DEMO DATA** badge to prevent confusion.
 - Once valid keys are populated in `.env` and tables exist in Supabase, the application seamlessly switches to live database and Gemini queries.
+

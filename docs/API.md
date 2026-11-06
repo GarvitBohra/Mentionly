@@ -380,3 +380,4 @@ Updates an action item's status.
 ```
 - **Status Enum**: `open` | `in_progress` | `applied` | `dismissed`
 - **Response `200 OK`**: `{ "success": true, "id": "geo1", "status": "in_progress" }`
+

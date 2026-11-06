@@ -69,3 +69,4 @@ The test suite covers the complete user lifecycle:
    - Supabase PostgREST requires tables to exist before queries can succeed. Until `supabase/migrations/20261106_mentionly_init.sql` is run in the Supabase SQL Editor, the system operates in resilient in-memory fallback mode.
 3. **Grounding Citation Availability**
    - Google Search Grounding availability depends on prompt specificity. General philosophical questions may not trigger grounding search chunks; customer-intent and commercial comparison questions trigger grounding citations reliably.
+

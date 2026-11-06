@@ -139,3 +139,4 @@ $$\text{Visibility Score} = (0.40 \times \text{Mention Rate}) + (0.35 \times \te
 | **Grounding Rate** | **10%** | Proportion of model answers supported by live Google Search grounding chunks. |
 
 > 📌 **Key Rule:** Prompts that fail execution (e.g., API timeout or HTTP 429 quota exhaustion) are strictly excluded from calculations so negative rates are not artificially skewed.
+

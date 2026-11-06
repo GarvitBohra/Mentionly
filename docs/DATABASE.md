@@ -185,3 +185,4 @@ To apply the schema to your Supabase project:
 4. Open [`supabase/migrations/20261106_mentionly_init.sql`](file:///d:/Project/Google_Buildathon_Project/Mentionly/supabase/migrations/20261106_mentionly_init.sql) in your code editor, copy all lines, and paste into the query window.
 5. Click **Run**.
 6. Navigate to **Table Editor** to confirm all 10 tables appear.
+
