@@ -44,7 +44,7 @@ export default function VisibilityMonitoringPage() {
       .then((data) => {
         if (data.brands && data.brands.length > 0) {
           setBrands(data.brands);
-          setSelectedBrandId(data.brands[0].id);
+          setSelectedBrandId((prev) => prev || data.brands[0].id);
         }
       });
   }, []);
@@ -109,12 +109,20 @@ export default function VisibilityMonitoringPage() {
         setProgress((prev) => (prev < 85 ? prev + 15 : prev));
       }, 700);
 
+      const targetBrandId = selectedBrandId || (brands.length > 0 ? brands[0].id : "default_brand");
+      const targetPromptIds =
+        selectedPromptIds.length > 0
+          ? selectedPromptIds
+          : prompts.length > 0
+          ? [prompts[0].id]
+          : ["prompt_1"];
+
       const res = await fetch("/api/monitoring", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brand_id: selectedBrandId,
-          prompt_ids: selectedPromptIds,
+          brand_id: targetBrandId,
+          prompt_ids: targetPromptIds,
         }),
       });
 

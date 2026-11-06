@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import {
   Brand,
   Competitor,
@@ -9,15 +11,64 @@ import {
   DashboardAnalytics,
 } from "@/types";
 
-// In-memory local storage state
-// Default stores start completely empty to ensure strict multi-tenant data isolation.
-// No user automatically sees fake mock data or fabricated citations.
-let brandsStore: Brand[] = [];
-let promptsStore: Prompt[] = [];
-let runsStore: MonitoringRun[] = [];
-let resultsStore: MonitoringResult[] = [];
-let citationsStore: Citation[] = [];
-let recommendationsStore: GEORecommendation[] = [];
+interface GlobalStoreState {
+  brands: Brand[];
+  prompts: Prompt[];
+  runs: MonitoringRun[];
+  results: MonitoringResult[];
+  citations: Citation[];
+  recommendations: GEORecommendation[];
+}
+
+const STATE_FILE = path.join(process.cwd(), ".mentionly_state.json");
+
+function loadStateFromDisk(): GlobalStoreState {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = fs.readFileSync(STATE_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      return {
+        brands: Array.isArray(parsed.brands) ? parsed.brands : [],
+        prompts: Array.isArray(parsed.prompts) ? parsed.prompts : [],
+        runs: Array.isArray(parsed.runs) ? parsed.runs : [],
+        results: Array.isArray(parsed.results) ? parsed.results : [],
+        citations: Array.isArray(parsed.citations) ? parsed.citations : [],
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      };
+    }
+  } catch (e) {
+    // Silently continue if reading fails
+  }
+  return {
+    brands: [],
+    prompts: [],
+    runs: [],
+    results: [],
+    citations: [],
+    recommendations: [],
+  };
+}
+
+function persistStateToDisk(state: GlobalStoreState) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  } catch (e) {
+    // Silently continue if disk write fails
+  }
+}
+
+// Attach store to globalThis so Next.js HMR or route splits never lose state
+const g = globalThis as unknown as { __mentionly_store?: GlobalStoreState };
+if (!g.__mentionly_store) {
+  g.__mentionly_store = loadStateFromDisk();
+}
+
+function getStore(): GlobalStoreState {
+  if (!g.__mentionly_store) {
+    g.__mentionly_store = loadStateFromDisk();
+  }
+  return g.__mentionly_store;
+}
 
 // Explicit isolated demo template that is ONLY loaded if intentionally requested
 export const DEMO_SAMPLE_BRAND: Brand = {
@@ -51,14 +102,16 @@ export const DEMO_SAMPLE_BRAND: Brand = {
 
 export const memoryStore = {
   getBrands: (organizationId?: string) => {
+    const list = getStore().brands;
     if (organizationId) {
-      return brandsStore.filter((b) => b.organization_id === organizationId);
+      return list.filter((b) => b.organization_id === organizationId);
     }
-    return brandsStore;
+    return list;
   },
 
   getBrand: (id: string, organizationId?: string) => {
-    const brand = brandsStore.find((b) => b.id === id);
+    const list = getStore().brands;
+    const brand = list.find((b) => b.id === id);
     if (!brand) return undefined;
     if (organizationId && brand.organization_id !== organizationId) {
       return undefined;
@@ -67,108 +120,150 @@ export const memoryStore = {
   },
 
   saveBrand: (brand: Brand) => {
-    const existingIdx = brandsStore.findIndex((b) => b.id === brand.id);
+    const store = getStore();
+    const existingIdx = store.brands.findIndex((b) => b.id === brand.id);
     if (existingIdx >= 0) {
-      brandsStore[existingIdx] = brand;
+      store.brands[existingIdx] = brand;
     } else {
-      brandsStore.push(brand);
+      store.brands.push(brand);
     }
+    persistStateToDisk(store);
     return brand;
   },
 
   deleteBrand: (id: string) => {
-    brandsStore = brandsStore.filter((b) => b.id !== id);
-    promptsStore = promptsStore.filter((p) => p.brand_id !== id);
-    runsStore = runsStore.filter((r) => r.brand_id !== id);
-    citationsStore = citationsStore.filter((c) => c.brand_id !== id);
-    recommendationsStore = recommendationsStore.filter((rec) => rec.brand_id !== id);
+    const store = getStore();
+    store.brands = store.brands.filter((b) => b.id !== id);
+    store.prompts = store.prompts.filter((p) => p.brand_id !== id);
+    store.runs = store.runs.filter((r) => r.brand_id !== id);
+    store.citations = store.citations.filter((c) => c.brand_id !== id);
+    store.recommendations = store.recommendations.filter((rec) => rec.brand_id !== id);
+    persistStateToDisk(store);
   },
 
   updateBrand: (id: string, updates: Partial<Brand>) => {
-    const brand = brandsStore.find((b) => b.id === id);
+    const store = getStore();
+    const brand = store.brands.find((b) => b.id === id);
     if (brand) {
       Object.assign(brand, updates);
       brand.updated_at = new Date().toISOString();
+      persistStateToDisk(store);
       return brand;
     }
     return null;
   },
 
-  getPrompts: (brandId: string) => promptsStore.filter((p) => p.brand_id === brandId),
+  getPrompts: (brandId: string) => {
+    return getStore().prompts.filter((p) => p.brand_id === brandId);
+  },
 
   savePrompt: (prompt: Prompt) => {
-    const existingIdx = promptsStore.findIndex((p) => p.id === prompt.id);
+    const store = getStore();
+    const existingIdx = store.prompts.findIndex((p) => p.id === prompt.id);
     if (existingIdx >= 0) {
-      promptsStore[existingIdx] = prompt;
+      store.prompts[existingIdx] = prompt;
     } else {
-      promptsStore.push(prompt);
+      store.prompts.push(prompt);
     }
+    persistStateToDisk(store);
     return prompt;
   },
 
   deletePrompt: (id: string) => {
-    promptsStore = promptsStore.filter((p) => p.id !== id);
+    const store = getStore();
+    store.prompts = store.prompts.filter((p) => p.id !== id);
+    persistStateToDisk(store);
   },
 
   updatePrompt: (id: string, updates: Partial<Prompt>) => {
-    const prompt = promptsStore.find((p) => p.id === id);
+    const store = getStore();
+    const prompt = store.prompts.find((p) => p.id === id);
     if (prompt) {
       Object.assign(prompt, updates);
       prompt.updated_at = new Date().toISOString();
+      persistStateToDisk(store);
       return prompt;
     }
     return null;
   },
 
-  getRuns: (brandId: string) =>
-    runsStore
-      .filter((r) => r.brand_id === brandId)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+  getRuns: (brandId: string) => {
+    return getStore()
+      .runs.filter((r) => r.brand_id === brandId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
 
-  getRun: (id: string) => runsStore.find((r) => r.id === id),
+  getRun: (id: string) => {
+    return getStore().runs.find((r) => r.id === id);
+  },
 
   saveRun: (run: MonitoringRun) => {
-    const existingIdx = runsStore.findIndex((r) => r.id === run.id);
+    const store = getStore();
+    const existingIdx = store.runs.findIndex((r) => r.id === run.id);
     if (existingIdx >= 0) {
-      runsStore[existingIdx] = run;
+      store.runs[existingIdx] = run;
     } else {
-      runsStore.push(run);
+      store.runs.push(run);
     }
+    persistStateToDisk(store);
     return run;
   },
 
-  getResults: (runId: string) => resultsStore.filter((res) => res.run_id === runId),
+  getResults: (runId: string) => {
+    return getStore().results.filter((res) => res.run_id === runId);
+  },
 
   saveResult: (result: MonitoringResult) => {
-    resultsStore.push(result);
+    const store = getStore();
+    const existingIdx = store.results.findIndex((r) => r.id === result.id);
+    if (existingIdx >= 0) {
+      store.results[existingIdx] = result;
+    } else {
+      store.results.push(result);
+    }
+    persistStateToDisk(store);
     return result;
   },
 
-  getCitations: (brandId: string) => citationsStore.filter((c) => c.brand_id === brandId),
+  getCitations: (brandId: string) => {
+    return getStore().citations.filter((c) => c.brand_id === brandId);
+  },
 
   saveCitation: (citation: Citation) => {
-    citationsStore.push(citation);
+    const store = getStore();
+    const existingIdx = store.citations.findIndex((c) => c.id === citation.id);
+    if (existingIdx >= 0) {
+      store.citations[existingIdx] = citation;
+    } else {
+      store.citations.push(citation);
+    }
+    persistStateToDisk(store);
     return citation;
   },
 
-  getRecommendations: (brandId: string) =>
-    recommendationsStore.filter((rec) => rec.brand_id === brandId),
+  getRecommendations: (brandId: string) => {
+    return getStore().recommendations.filter((rec) => rec.brand_id === brandId);
+  },
 
   saveRecommendation: (rec: GEORecommendation) => {
-    const existingIdx = recommendationsStore.findIndex((r) => r.id === rec.id);
+    const store = getStore();
+    const existingIdx = store.recommendations.findIndex((r) => r.id === rec.id);
     if (existingIdx >= 0) {
-      recommendationsStore[existingIdx] = rec;
+      store.recommendations[existingIdx] = rec;
     } else {
-      recommendationsStore.push(rec);
+      store.recommendations.push(rec);
     }
+    persistStateToDisk(store);
     return rec;
   },
 
   updateRecommendationStatus: (id: string, status: GEORecommendation["status"]) => {
-    const rec = recommendationsStore.find((r) => r.id === id);
+    const store = getStore();
+    const rec = store.recommendations.find((r) => r.id === id);
     if (rec) {
       rec.status = status;
       rec.updated_at = new Date().toISOString();
+      persistStateToDisk(store);
     }
     return rec;
   },
@@ -177,21 +272,26 @@ export const memoryStore = {
    * Seed demo data ONLY into a specific user/organization context when requested.
    */
   seedDemoDataForOrg: (organizationId: string) => {
+    const store = getStore();
     const demoBrand: Brand = {
       ...DEMO_SAMPLE_BRAND,
       id: crypto.randomUUID(),
       organization_id: organizationId,
     };
-    brandsStore.push(demoBrand);
+    store.brands.push(demoBrand);
+    persistStateToDisk(store);
     return demoBrand;
   },
 
   clearAll: () => {
-    brandsStore = [];
-    promptsStore = [];
-    runsStore = [];
-    resultsStore = [];
-    citationsStore = [];
-    recommendationsStore = [];
+    if (g.__mentionly_store) {
+      g.__mentionly_store.brands = [];
+      g.__mentionly_store.prompts = [];
+      g.__mentionly_store.runs = [];
+      g.__mentionly_store.results = [];
+      g.__mentionly_store.citations = [];
+      g.__mentionly_store.recommendations = [];
+      persistStateToDisk(g.__mentionly_store);
+    }
   },
 };

@@ -28,16 +28,19 @@ export async function executeMonitoringRun(params: {
   const collectedCitations: Citation[] = [];
 
   // Update run to 'running'
+  const runInStore = memoryStore.getRun(runId);
+  if (runInStore) {
+    runInStore.status = "running";
+    runInStore.started_at = new Date().toISOString();
+  }
   if (supabase) {
-    await supabase
-      .from("monitoring_runs")
-      .update({ status: "running", started_at: new Date().toISOString() })
-      .eq("id", runId);
-  } else {
-    const r = memoryStore.getRun(runId);
-    if (r) {
-      r.status = "running";
-      r.started_at = new Date().toISOString();
+    try {
+      await supabase
+        .from("monitoring_runs")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", runId);
+    } catch (e) {
+      console.warn("Supabase run start update notice:", e);
     }
   }
 
@@ -86,32 +89,37 @@ export async function executeMonitoringRun(params: {
       collectedCitations.push(...analysis.citations);
       successfulPromptsCount++;
 
+      // Always persist to memoryStore
+      memoryStore.saveResult(resultRecord);
+      analysis.citations.forEach((c) => memoryStore.saveCitation(c));
+      const r = memoryStore.getRun(runId);
+      if (r) r.completed_prompts = successfulPromptsCount;
+
       if (supabase) {
-        await supabase.from("monitoring_results").insert(resultRecord);
-        if (analysis.citations.length > 0) {
-          await supabase.from("citations").insert(
-            analysis.citations.map((c) => ({
-              id: c.id,
-              monitoring_result_id: resultRecord.id,
-              brand_id: brandId,
-              title: c.title,
-              url: c.url,
-              domain: c.domain,
-              snippet: c.snippet,
-              associated_prompt: c.associated_prompt,
-              mentions_brand: c.mentions_brand,
-            }))
-          );
+        try {
+          await supabase.from("monitoring_results").insert(resultRecord);
+          if (analysis.citations.length > 0) {
+            await supabase.from("citations").insert(
+              analysis.citations.map((c) => ({
+                id: c.id,
+                monitoring_result_id: resultRecord.id,
+                brand_id: brandId,
+                title: c.title,
+                url: c.url,
+                domain: c.domain,
+                snippet: c.snippet,
+                associated_prompt: c.associated_prompt,
+                mentions_brand: c.mentions_brand,
+              }))
+            );
+          }
+          await supabase
+            .from("monitoring_runs")
+            .update({ completed_prompts: successfulPromptsCount })
+            .eq("id", runId);
+        } catch (dbErr) {
+          console.warn("Supabase result persist warning:", dbErr);
         }
-        await supabase
-          .from("monitoring_runs")
-          .update({ completed_prompts: successfulPromptsCount })
-          .eq("id", runId);
-      } else {
-        memoryStore.saveResult(resultRecord);
-        analysis.citations.forEach((c) => memoryStore.saveCitation(c));
-        const r = memoryStore.getRun(runId);
-        if (r) r.completed_prompts = successfulPromptsCount;
       }
     } catch (err: any) {
       failedPromptsCount++;
@@ -136,15 +144,13 @@ export async function executeMonitoringRun(params: {
 
       collectedResults.push(failedResult);
 
+      memoryStore.saveResult(failedResult);
       if (supabase) {
-        // Record failed prompt result into Supabase so users can inspect errors
         try {
           await supabase.from("monitoring_results").insert(failedResult);
         } catch (dbErr) {
           console.warn("Could not insert failed result into Supabase:", dbErr);
         }
-      } else {
-        memoryStore.saveResult(failedResult);
       }
     }
   }
@@ -182,22 +188,27 @@ export async function executeMonitoringRun(params: {
     created_at: new Date().toISOString(),
   };
 
+  // Always save final run data to memoryStore
+  memoryStore.saveRun(finalRunData);
+
   if (supabase) {
-    await supabase
-      .from("monitoring_runs")
-      .update({
-        status: finalStatus,
-        completed_prompts: successfulPromptsCount,
-        visibility_score: finalRunData.visibility_score,
-        brand_mention_rate: finalRunData.brand_mention_rate,
-        competitor_mention_rate: finalRunData.competitor_mention_rate,
-        recommendation_rate: finalRunData.recommendation_rate,
-        error_message: finalErrorMessage || null,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", runId);
-  } else {
-    memoryStore.saveRun(finalRunData);
+    try {
+      await supabase
+        .from("monitoring_runs")
+        .update({
+          status: finalStatus,
+          completed_prompts: successfulPromptsCount,
+          visibility_score: finalRunData.visibility_score,
+          brand_mention_rate: finalRunData.brand_mention_rate,
+          competitor_mention_rate: finalRunData.competitor_mention_rate,
+          recommendation_rate: finalRunData.recommendation_rate,
+          error_message: finalErrorMessage || null,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+    } catch (err) {
+      console.warn("Supabase update monitoring_runs notice:", err);
+    }
   }
 
   return finalRunData;
