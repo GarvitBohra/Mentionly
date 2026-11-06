@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { executeMonitoringRun } from "@/lib/monitoring-engine";
 import { MonitoringRun } from "@/types";
 
+export const maxDuration = 60;
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

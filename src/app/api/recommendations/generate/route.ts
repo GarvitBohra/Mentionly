@@ -11,6 +11,8 @@ import { memoryStore } from "@/lib/store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GEORecommendation } from "@/types";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     const json = await req.json();
