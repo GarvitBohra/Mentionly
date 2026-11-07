@@ -1,5 +1,5 @@
 import { CompetitorMention, Citation } from "@/types";
-import { GroundingSource } from "./gemini";
+import { GroundingSource } from "./openai";
 
 export interface MentionAnalysisResult {
   brandMentioned: boolean;
@@ -140,19 +140,21 @@ export function analyzeMentionResponse(params: {
   groundingSources: GroundingSource[];
 }): MentionAnalysisResult {
   const { rawResponse, brandName, brandId, promptQuery, competitors, groundingSources } = params;
+  // Do not count names if a model merely repeats the user's prompt before answering.
+  const answerText = rawResponse.replace(promptQuery, "").trim();
 
   // 1. Analyze target brand
   const brandRegex = createBrandRegex(brandName);
-  const brandMentioned = brandRegex.test(rawResponse);
-  const brandRecommended = brandMentioned && evaluateRecommendation(rawResponse, brandName);
-  const brandPosition = brandMentioned ? calculatePosition(rawResponse, brandName) : undefined;
-  const mentionContext = brandMentioned ? extractContextWindow(rawResponse, brandRegex) : undefined;
+  const brandMentioned = brandRegex.test(answerText);
+  const brandRecommended = brandMentioned && evaluateRecommendation(answerText, brandName);
+  const brandPosition = brandMentioned ? calculatePosition(answerText, brandName) : undefined;
+  const mentionContext = brandMentioned ? extractContextWindow(answerText, brandRegex) : undefined;
 
   // 2. Analyze competitors
   const competitorsMentioned: CompetitorMention[] = competitors.map((compName) => {
     const compRegex = createBrandRegex(compName);
-    const mentioned = compRegex.test(rawResponse);
-    const position = mentioned ? calculatePosition(rawResponse, compName) : undefined;
+    const mentioned = compRegex.test(answerText);
+    const position = mentioned ? calculatePosition(answerText, compName) : undefined;
     return {
       name: compName,
       mentioned,
@@ -180,7 +182,7 @@ export function analyzeMentionResponse(params: {
       domain,
       snippet: source.snippet,
       associated_prompt: promptQuery,
-      mentions_brand: brandInTitleOrSnippet || brandMentioned,
+      mentions_brand: brandInTitleOrSnippet,
       created_at: new Date().toISOString(),
     };
   });

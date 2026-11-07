@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { DisclaimerBanner } from "@/components/ui/disclaimer-banner";
 import { Brand, Prompt, MonitoringRun, MonitoringResult } from "@/types";
 import { formatDate, formatTimeAgo } from "@/lib/utils";
+import { getSelectedBrandId } from "@/lib/brand-selection";
 
 export default function VisibilityMonitoringPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -44,7 +45,13 @@ export default function VisibilityMonitoringPage() {
       .then((data) => {
         if (data.brands && data.brands.length > 0) {
           setBrands(data.brands);
-          setSelectedBrandId((prev) => prev || data.brands[0].id);
+          setSelectedBrandId((current) => {
+            if (current && data.brands.some((brand: Brand) => brand.id === current)) return current;
+            const savedBrandId = getSelectedBrandId();
+            return data.brands.some((brand: Brand) => brand.id === savedBrandId)
+              ? savedBrandId!
+              : data.brands[0].id;
+          });
         }
       });
   }, []);
@@ -157,7 +164,7 @@ export default function VisibilityMonitoringPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-white">AI Visibility Engine</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Execute batch search intent checks against Gemini API with Search Grounding enabled.
+            Execute citation-backed search intent checks with OpenAI web search.
           </p>
         </div>
       </div>
@@ -185,7 +192,7 @@ export default function VisibilityMonitoringPage() {
               className="gap-2 text-xs"
             >
               <Play className="h-3.5 w-3.5 fill-current" />
-              <span>{isRunning ? "Testing Against Gemini..." : "Run AI Check"}</span>
+              <span>{isRunning ? "Checking Live Sources..." : "Run AI Check"}</span>
             </Button>
           </div>
         </CardHeader>
@@ -203,7 +210,7 @@ export default function VisibilityMonitoringPage() {
               <div className="flex items-center justify-between text-xs text-indigo-300">
                 <span className="flex items-center gap-2">
                   <Sparkles className="h-3.5 w-3.5 animate-spin" />
-                  Querying Gemini with Google Search Grounding...
+                  Querying OpenAI with web search...
                 </span>
                 <span className="font-mono">{progress}%</span>
               </div>
@@ -416,12 +423,12 @@ export default function VisibilityMonitoringPage() {
                       </div>
                     )}
 
-                    {/* Expanded Original Raw Gemini Response & Sources */}
+                    {/* Expanded original OpenAI response and sources */}
                     {isExpanded && (
                       <div className="pt-3 border-t border-[#1e242c] space-y-3">
                         <div>
                           <span className="text-[11px] font-semibold text-slate-400 uppercase font-mono block mb-1.5">
-                            Original AI Observation Text (Gemini API)
+                            Original AI Observation Text (OpenAI)
                           </span>
                           <div className="rounded-lg bg-[#070a0e] p-3 text-xs text-slate-300 font-mono leading-relaxed whitespace-pre-wrap border border-[#1b212b]">
                             {res.raw_response || "No raw text response returned."}

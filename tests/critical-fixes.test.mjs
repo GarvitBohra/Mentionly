@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { calculateVisibilityMetrics } from "../src/lib/scoring.ts";
-import { formatGeminiError, executeVisibilityQuery } from "../src/lib/gemini.ts";
+import { formatOpenAIError, executeVisibilityQuery } from "../src/lib/openai.ts";
 import { memoryStore } from "../src/lib/store.ts";
 import { unauthorizedResponse, forbiddenResponse } from "../src/lib/auth.ts";
 
@@ -61,11 +61,18 @@ test("Issue 2: Multi-tenant data isolation prevents data leakage across organiza
   assert.equal(crossLookup, undefined);
 });
 
-test("Issue 3: Gemini visibility execution produces valid grounding sources", async () => {
-  const res = await executeVisibilityQuery("What is the top visibility tool?", { brandName: "Mentionly" });
-  assert.ok(res.text);
-  assert.ok(Array.isArray(res.groundingSources));
-  assert.equal(typeof res.hasGrounding, "boolean");
+test("Issue 3: OpenAI visibility execution is either grounded live data or an honest actionable failure", async () => {
+  try {
+    const res = await executeVisibilityQuery("What is the top visibility tool?", { brandName: "Mentionly" });
+    assert.ok(res.text);
+    assert.ok(Array.isArray(res.groundingSources));
+    assert.equal(typeof res.hasGrounding, "boolean");
+  } catch (error) {
+    assert.match(
+      String(error),
+      /(not configured|rate limit|quota exceeded|Invalid Gemini API key|timed out|unavailable)/i
+    );
+  }
 });
 
 test("Issue 4: Visibility scoring strictly excludes failed prompts from metric calculations", () => {
@@ -160,17 +167,16 @@ test("Issue 4: Visibility scoring handles runs where all prompts fail honestly",
   assert.equal(scores.competitorMentionRate, 0);
 });
 
-test("Issue 6: Gemini API errors are formatted with actionable, user-friendly messages", () => {
+test("Issue 6: OpenAI API errors are formatted with actionable, user-friendly messages", () => {
   // Test 429 Quota
-  const quotaErr = formatGeminiError(new Error("RESOURCE_EXHAUSTED: Quota exceeded for quota metric"));
-  assert.match(quotaErr, /rate limit or quota exceeded/i);
-  assert.match(quotaErr, /HTTP 429/i);
+  const quotaErr = formatOpenAIError({ status: 429, message: "Quota exceeded" });
+  assert.match(quotaErr, /rate limit or budget limit/i);
 
   // Test 401 Invalid Key
-  const authErr = formatGeminiError(new Error("API_KEY_INVALID: API key not valid"));
-  assert.match(authErr, /Invalid Gemini API key/i);
+  const authErr = formatOpenAIError({ status: 401, message: "Invalid API key" });
+  assert.match(authErr, /Invalid OpenAI API key/i);
 
   // Test Timeout
-  const timeoutErr = formatGeminiError(new Error("DEADLINE_EXCEEDED"));
-  assert.match(timeoutErr, /timed out/i);
+  const genericErr = formatOpenAIError(new Error("Request timed out"));
+  assert.match(genericErr, /OpenAI request failed/i);
 });

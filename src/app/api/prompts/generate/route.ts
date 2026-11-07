@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promptGenerationSchema } from "@/lib/validations";
-import { generateSearchPrompts } from "@/lib/gemini";
+import { generateSearchPrompts } from "@/lib/openai";
 import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
 export const maxDuration = 60;
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       prompts: generated,
       count: generated.length,
-      model: "gemini-3.8-flash",
+      mode: "live",
     });
   } catch (error: any) {
     if (error.name === "ZodError") {

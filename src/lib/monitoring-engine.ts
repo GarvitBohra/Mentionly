@@ -1,4 +1,4 @@
-import { executeVisibilityQuery, formatGeminiError } from "./gemini";
+import { executeVisibilityQuery, formatOpenAIError } from "./openai";
 import { analyzeMentionResponse } from "./analysis";
 import { calculateVisibilityMetrics } from "./scoring";
 import { memoryStore } from "./store";
@@ -57,6 +57,7 @@ export async function executeMonitoringRun(params: {
       const queryResult = await executeVisibilityQuery(promptItem.query_text, {
         brandName,
         website,
+        competitors,
       });
 
       // 2. Perform Mention & Grounding Analysis
@@ -123,7 +124,7 @@ export async function executeMonitoringRun(params: {
       }
     } catch (err: any) {
       failedPromptsCount++;
-      const formattedErr = formatGeminiError(err);
+      const formattedErr = formatOpenAIError(err);
       lastFailureReason = formattedErr;
       console.error(`Error processing prompt "${promptItem.query_text}":`, formattedErr);
 
@@ -185,7 +186,7 @@ export async function executeMonitoringRun(params: {
     error_message: finalErrorMessage,
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
-    created_at: new Date().toISOString(),
+    created_at: runInStore?.created_at || new Date().toISOString(),
   };
 
   // Always save final run data to memoryStore

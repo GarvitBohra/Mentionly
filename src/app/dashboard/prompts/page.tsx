@@ -48,6 +48,7 @@ export default function PromptsPage() {
 
   // Gemini AI Prompt Generator
   const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [generatedList, setGeneratedList] = useState<
     Array<{ query_text: string; category: PromptCategory }>
   >([]);
@@ -68,7 +69,7 @@ export default function PromptsPage() {
               name: "Mentionly",
               website: "https://mentionly.ai",
               industry: "AI Search Visibility",
-              competitors: ["Otterly.AI", "Profound"],
+              competitors: [],
             }),
           })
             .then((r) => r.json())
@@ -172,10 +173,11 @@ export default function PromptsPage() {
       website: "https://mentionly.ai",
       industry: "AI Search Visibility",
       description: "AI Search Visibility Platform",
-      competitors: [{ name: "Otterly.AI" }, { name: "Profound" }],
+      competitors: [],
     };
 
     setIsGenerating(true);
+    setErrorMsg(null);
     try {
       const res = await fetch("/api/prompts/generate", {
         method: "POST",
@@ -191,10 +193,10 @@ export default function PromptsPage() {
       });
 
       const data = await res.json();
-      if (data.prompts) {
-        setGeneratedList(data.prompts);
-      }
-    } catch (err) {
+      if (!res.ok) throw new Error(data.error || "Gemini could not generate prompts");
+      setGeneratedList(data.prompts || []);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Gemini could not generate prompts");
       console.error("Prompt generation error:", err);
     } finally {
       setIsGenerating(false);
@@ -313,6 +315,12 @@ export default function PromptsPage() {
           </Button>
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="rounded-lg border border-rose-900/50 bg-rose-950/30 p-3 text-xs text-rose-300">
+          {errorMsg}
+        </div>
+      )}
 
       {/* Gemini AI Generated Prompts Suggestions Drawer */}
       {generatedList.length > 0 && (

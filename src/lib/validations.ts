@@ -1,21 +1,28 @@
 import { z } from "zod";
 
+const websiteSchema = z
+  .string()
+  .trim()
+  .max(2048, "Website URL is too long")
+  .transform((value) => {
+    if (!value) return "https://mentionly.ai";
+    return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  })
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Enter a valid http(s) website URL");
+
 export const brandSchema = z.object({
-  name: z.string().min(1, "Brand name is required").max(100),
-  website: z
-    .string()
-    .optional()
-    .default("mentionly.ai")
-    .transform((v) => {
-      const trimmed = (v || "").trim();
-      if (!trimmed) return "https://mentionly.ai";
-      return trimmed.startsWith("http://") || trimmed.startsWith("https://")
-        ? trimmed
-        : `https://${trimmed}`;
-    }),
-  industry: z.string().optional().default("Technology"),
-  country: z.string().optional().default("Global"),
-  language: z.string().optional().default("English"),
+  name: z.string().trim().min(1, "Brand name is required").max(100),
+  website: websiteSchema.optional().default("https://mentionly.ai"),
+  industry: z.string().trim().max(100).optional().default("Technology"),
+  country: z.string().trim().max(100).optional().default("Global"),
+  language: z.string().trim().max(100).optional().default("English"),
   description: z.string().max(1000).optional().default(""),
   competitors: z
     .array(z.string())
@@ -26,7 +33,7 @@ export const brandSchema = z.object({
 
 export const promptGenerationSchema = z.object({
   brand_name: z.string().min(1),
-  website: z.string().transform((v) => (v.startsWith("http://") || v.startsWith("https://") ? v : `https://${v}`)),
+  website: websiteSchema,
   industry: z.string().min(1).default("Technology"),
   description: z.string().optional().default(""),
   competitors: z.array(z.string()).optional().default([]),
@@ -35,7 +42,7 @@ export const promptGenerationSchema = z.object({
 
 export const promptCreateSchema = z.object({
   brand_id: z.string().min(1),
-  query_text: z.string().min(1, "Prompt query is required"),
+  query_text: z.string().trim().min(1, "Prompt query is required").max(1000, "Prompt query is too long"),
   category: z.enum([
     "Discovery",
     "Recommendation",

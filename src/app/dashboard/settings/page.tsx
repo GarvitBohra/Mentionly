@@ -23,7 +23,7 @@ interface HealthData {
     tablesExist: boolean;
     message?: string;
   };
-  gemini: {
+  openai: {
     isConfigured: boolean;
     activeModels: string[];
   };
@@ -67,12 +67,12 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Gemini */}
+          {/* OpenAI */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg border border-[#1e242c] bg-[#10141c] text-xs gap-2">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-200">Google Gemini API</span>
-                {health?.gemini.isConfigured ? (
+                <span className="font-semibold text-slate-200">OpenAI API</span>
+                {health?.openai.isConfigured ? (
                   <Badge variant="success" className="text-[10px]">
                     API Key Configured
                   </Badge>
@@ -83,10 +83,10 @@ export default function SettingsPage() {
                 )}
               </div>
               <p className="text-[11px] text-slate-400">
-                Active models: {health?.gemini.activeModels.join(", ") || "gemini-3.8-flash, gemini-3.5-flash"}
+                Active model: {health?.openai.activeModels.join(", ") || "gpt-6-luna"}
               </p>
             </div>
-            <span className="text-[10px] font-mono text-slate-500">GEMINI_API_KEY</span>
+            <span className="text-[10px] font-mono text-slate-500">OPENAI_API_KEY</span>
           </div>
 
           {/* Supabase */}

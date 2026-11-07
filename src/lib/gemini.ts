@@ -20,18 +20,19 @@ export interface GeneratedPromptResult {
   category: PromptCategory;
 }
 
-// Active Gemini models in preference order
+// Active Gemini models in preference order.
 const ACTIVE_GEMINI_MODELS = [
   "gemini-3.8-flash",
-  "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
 ];
+
+export function isGeminiConfigured(): boolean {
+  const apiKey = process.env.GEMINI_API_KEY;
+  return Boolean(apiKey && !apiKey.includes("your-gemini-api-key") && apiKey.trim());
+}
 
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.includes("your-gemini-api-key") || apiKey.trim() === "") {
-    return null;
-  }
+  if (!isGeminiConfigured() || !apiKey) return null;
   try {
     return new GoogleGenAI({ apiKey });
   } catch (err) {
@@ -62,9 +63,16 @@ export function formatGeminiError(error: any): string {
   return `Gemini API query error: ${rawMsg}`;
 }
 
+function unavailableGeminiError(lastError?: unknown): Error {
+  if (!isGeminiConfigured()) {
+    return new Error("Gemini is not configured. Add a valid GEMINI_API_KEY to use live monitoring and generation.");
+  }
+  return new Error(formatGeminiError(lastError));
+}
+
 /**
  * Generate customer-intent search prompts across key categories.
- * Tries live Gemini first; if unavailable, generates realistic prompts to guarantee smooth demo.
+ * Returns only live Gemini output. Demo content is seeded separately and clearly labelled.
  */
 export async function generateSearchPrompts(params: {
   brand_name: string;
@@ -76,6 +84,7 @@ export async function generateSearchPrompts(params: {
 }): Promise<GeneratedPromptResult[]> {
   const count = params.count || 6;
   const client = getGeminiClient();
+  let lastError: unknown;
 
   if (client) {
     for (const model of ACTIVE_GEMINI_MODELS) {
@@ -120,50 +129,25 @@ Generate ${count} diverse, high-value search prompts customers use when evaluati
           }));
         }
       } catch (error: any) {
+        lastError = error;
         console.warn(`Gemini prompt generation failed with model ${model}:`, error?.message || error);
       }
     }
   }
 
-  // Resilient fallback for demo continuity
-  const comp = params.competitors?.[0] || "top alternatives";
-  return [
-    {
-      query_text: `What are the top-rated ${params.industry} platforms available in 2026?`,
-      category: "Discovery" as PromptCategory,
-    },
-    {
-      query_text: `Which ${params.industry} tool do experts recommend for performance and reliability?`,
-      category: "Recommendation" as PromptCategory,
-    },
-    {
-      query_text: `How does ${params.brand_name} compare to ${comp} in features and pricing?`,
-      category: "Comparison" as PromptCategory,
-    },
-    {
-      query_text: `Best alternatives to ${comp} for modern enterprise teams`,
-      category: "Comparison" as PromptCategory,
-    },
-    {
-      query_text: `Where to buy enterprise ${params.industry} software with fastest setup?`,
-      category: "Purchase Intent" as PromptCategory,
-    },
-    {
-      query_text: `How to solve workflow and attribution visibility challenges in ${params.industry}?`,
-      category: "Problem Solving" as PromptCategory,
-    },
-  ].slice(0, count);
+  throw unavailableGeminiError(lastError);
 }
 
 /**
  * Execute a visibility query using Gemini with Google Search Grounding enabled.
- * Tries live Gemini first; if unavailable, generates realistic observations to guarantee smooth demo.
+ * Executes a live Gemini query and deliberately never fabricates a citation or brand observation.
  */
 export async function executeVisibilityQuery(
   promptQuery: string,
   context?: { brandName?: string; website?: string }
 ): Promise<VisibilityQueryResult> {
   const client = getGeminiClient();
+  let lastError: unknown;
 
   if (client) {
     for (const model of ACTIVE_GEMINI_MODELS) {
@@ -216,36 +200,13 @@ export async function executeVisibilityQuery(
           isApiObservation: true,
         };
       } catch (err: any) {
+        lastError = err;
         console.warn(`Gemini visibility execution failed on ${model}:`, err?.message || err);
       }
     }
   }
 
-  // Resilient observation for demo presentation
-  const brand = context?.brandName || "Mentionly";
-  const mockText = `Based on current evaluations for "${promptQuery}":
-1. Key platforms recommended include ${brand}, Otterly.AI, and Profound.
-2. ${brand} provides real-time search intent monitoring and source citation attribution.
-3. For teams prioritizing automated competitor benchmarking, ${brand} offers verified grounding metrics.`;
-
-  return {
-    text: mockText,
-    groundingSources: [
-      {
-        title: "Search Engine Land: State of AI Grounding & GEO",
-        url: "https://searchengineland.com/state-of-ai-grounding-2026",
-        snippet: "Evaluating brand appearance across generative search grounding models.",
-      },
-      {
-        title: "TechCrunch Enterprise: Generative Engine Optimization Breakdown",
-        url: "https://techcrunch.com/2026/02/generative-engine-optimization-breakdown",
-        snippet: "Industry leaders in brand intelligence and AI visibility monitoring.",
-      },
-    ],
-    hasGrounding: true,
-    model: "gemini-3.8-flash (Search Grounding)",
-    isApiObservation: true,
-  };
+  throw unavailableGeminiError(lastError);
 }
 
 /**
@@ -271,6 +232,7 @@ export async function generateGeoRecommendationsWithGemini(params: {
   }>
 > {
   const client = getGeminiClient();
+  let lastError: unknown;
 
   if (client) {
     for (const model of ACTIVE_GEMINI_MODELS) {
@@ -310,44 +272,11 @@ Return ONLY a JSON array, no extra commentary or markdown.`;
           return parsed;
         }
       } catch (err: any) {
+        lastError = err;
         console.warn(`GEO recommendation failed on model ${model}:`, err?.message || err);
       }
     }
   }
 
-  // Resilient fallback for demo presentation
-  return [
-    {
-      title: "Publish a Dedicated Competitor Comparison Matrix",
-      category: "Competitor Insights",
-      explanation: `Competitors were frequently mentioned in comparison queries where ${params.brandName} was absent.`,
-      evidence: "Comparison queries showed higher recommendation rates for alternative tools.",
-      suggested_action: `Create an in-depth comparison page on ${params.website} directly comparing features with top competitors.`,
-      priority: "High",
-    },
-    {
-      title: "Enhance Structured Data and Product Schema on Website",
-      category: "Website Content",
-      explanation: "AI models rely heavily on clear structured product definitions to extract accurate answers.",
-      evidence: "Technical definition queries lacked direct citations back to the primary domain.",
-      suggested_action: "Implement JSON-LD SoftwareApplication schema markup across all landing pages.",
-      priority: "Medium",
-    },
-    {
-      title: "Build Industry Authority on Technical AI Search Publications",
-      category: "Brand Authority",
-      explanation: "Search Engine Land and TechCrunch are primary citation sources shaping AI model recommendations.",
-      evidence: "Verified grounding citations heavily favored industry press and technical review domains.",
-      suggested_action: "Publish guest technical benchmarks and case studies on tier-1 search optimization publications.",
-      priority: "Medium",
-    },
-    {
-      title: "Create Problem-Solving Documentation for User Intent Queries",
-      category: "Missing Information",
-      explanation: "Users asking 'how-to' problem-solving queries received broad answers missing direct product references.",
-      evidence: "Problem Solving category queries had lower brand visibility than direct recommendation queries.",
-      suggested_action: "Author technical documentation and tutorials directly addressing customer implementation challenges.",
-      priority: "Low",
-    },
-  ];
+  throw unavailableGeminiError(lastError);
 }

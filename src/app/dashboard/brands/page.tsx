@@ -73,8 +73,7 @@ export default function BrandsPage() {
       .map((c) => c.trim())
       .filter((c) => c.length > 0);
 
-    const competitors =
-      parsedCompetitors.length > 0 ? parsedCompetitors : ["Otterly.AI", "Profound"];
+    const competitors = parsedCompetitors;
 
     try {
       const res = await fetch("/api/brands", {
@@ -151,7 +150,7 @@ export default function BrandsPage() {
           country: editCountry.trim() || editingBrand.country,
           language: editLanguage.trim() || editingBrand.language,
           description: editDescription.trim(),
-          competitors: competitors.length > 0 ? competitors : ["Otterly.AI", "Profound"],
+          competitors,
         }),
       });
 
@@ -369,7 +368,7 @@ export default function BrandsPage() {
                   Key Competitors (comma separated)
                 </label>
                 <Input
-                  placeholder="e.g. Otterly.AI, Profound, Peec.ai"
+                  placeholder="e.g. Samsung Galaxy, Google Pixel, OnePlus"
                   value={competitorsInput}
                   onChange={(e) => setCompetitorsInput(e.target.value)}
                 />

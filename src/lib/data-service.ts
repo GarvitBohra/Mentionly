@@ -133,9 +133,11 @@ export async function getActiveBrand(
   userId?: string,
   requestedBrandId?: string
 ): Promise<Brand | null> {
+  const localOrganizationId = `org-${userId || "demo"}`;
+
   // 1. Check local/disk memoryStore first for requested ID
   if (requestedBrandId) {
-    const memBrand = memoryStore.getBrand(requestedBrandId);
+    const memBrand = memoryStore.getBrand(requestedBrandId, localOrganizationId);
     if (memBrand) return memBrand;
   }
 
@@ -143,11 +145,13 @@ export async function getActiveBrand(
   const supabase = createAdminClient();
   if (supabase) {
     try {
+      const organizationIds = await getUserOrgIds(userId || "demo");
       if (requestedBrandId) {
         const { data: brand, error } = await supabase
           .from("brands")
           .select("*, competitors(*)")
           .eq("id", requestedBrandId)
+          .in("organization_id", organizationIds)
           .single();
 
         if (!error && brand) return brand;
@@ -156,6 +160,7 @@ export async function getActiveBrand(
       const { data: defaultBrand, error: defErr } = await supabase
         .from("brands")
         .select("*, competitors(*)")
+        .in("organization_id", organizationIds)
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
@@ -167,7 +172,7 @@ export async function getActiveBrand(
   }
 
   // 3. Check all memoryStore brands
-  const allMem = memoryStore.getBrands();
+  const allMem = memoryStore.getBrands(localOrganizationId);
   if (requestedBrandId) {
     const byIdOrName = allMem.find(
       (b) =>
@@ -192,10 +197,7 @@ export async function getActiveBrand(
       description: "Auto-initialized brand target for monitoring",
       is_default: true,
       created_at: new Date().toISOString(),
-      competitors: [
-        { id: crypto.randomUUID(), brand_id: requestedBrandId, name: "Otterly.AI" },
-        { id: crypto.randomUUID(), brand_id: requestedBrandId, name: "Profound" },
-      ],
+      competitors: [],
     };
     memoryStore.saveBrand(fallbackBrand);
     return fallbackBrand;
@@ -209,12 +211,15 @@ export async function getActiveBrand(
  */
 export async function listBrands(userId?: string): Promise<Brand[]> {
   let dbBrands: Brand[] = [];
+  const localOrganizationId = `org-${userId || "demo"}`;
   const supabase = createAdminClient();
   if (supabase) {
     try {
+      const organizationIds = await getUserOrgIds(userId || "demo");
       const { data, error } = await supabase
         .from("brands")
         .select("*, competitors(*)")
+        .in("organization_id", organizationIds)
         .order("created_at", { ascending: false });
 
       if (!error && data && data.length > 0) {
@@ -225,7 +230,7 @@ export async function listBrands(userId?: string): Promise<Brand[]> {
     }
   }
 
-  const memBrands = memoryStore.getBrands();
+  const memBrands = memoryStore.getBrands(localOrganizationId);
   const map = new Map<string, Brand>();
   for (const b of dbBrands) {
     map.set(b.id, b);
@@ -259,10 +264,7 @@ export async function createBrand(
   }
 ): Promise<Brand> {
   const brandId = crypto.randomUUID();
-  const competitorsList =
-    brandData.competitors && brandData.competitors.length > 0
-      ? brandData.competitors
-      : ["Otterly.AI", "Profound"];
+  const competitorsList = brandData.competitors || [];
 
   const rawWebsite = brandData.website || "mentionly.ai";
   const formattedWebsite =
@@ -279,7 +281,7 @@ export async function createBrand(
     country: brandData.country || "Global",
     language: brandData.language || "English",
     description: brandData.description || "",
-    is_default: memoryStore.getBrands().length === 0,
+    is_default: memoryStore.getBrands(`org-${userId || "default"}`).length === 0,
     created_at: new Date().toISOString(),
     competitors: competitorsList.map((c) => ({
       id: crypto.randomUUID(),

@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,8 +38,15 @@ export default function LoginPage() {
     router.push("/dashboard");
   };
 
-  const handleDemoAccess = () => {
+  const handleDemoAccess = async () => {
+    setDemoLoading(true);
     document.cookie = `mentionly_user_email=demo@mentionly.ai; path=/; max-age=86400`;
+    try {
+      // Seed an isolated, clearly labelled local workspace before navigating.
+      await fetch("/api/demo", { method: "POST" });
+    } catch {
+      // The dashboard still has a graceful empty-state fallback if this is unavailable.
+    }
     router.push("/dashboard");
   };
 
@@ -100,9 +108,10 @@ export default function LoginPage() {
               variant="secondary"
               className="w-full text-xs gap-1.5 text-slate-300"
               onClick={handleDemoAccess}
+              isLoading={demoLoading}
             >
               <Sparkles className="h-3 w-3 text-indigo-400" />
-              <span>Enter Demo Dashboard</span>
+              <span>{demoLoading ? "Preparing Demo Workspace..." : "Enter Demo Dashboard"}</span>
             </Button>
           </form>
 

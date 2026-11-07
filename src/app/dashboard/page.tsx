@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Eye,
   TrendingUp,
@@ -37,13 +38,21 @@ import { DisclaimerBanner } from "@/components/ui/disclaimer-banner";
 import { DashboardAnalytics } from "@/types";
 import { formatDate, formatTimeAgo } from "@/lib/utils";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [data, setData] = useState<DashboardAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const searchParams = useSearchParams();
+  const brandId = searchParams.get("brand_id");
 
   useEffect(() => {
-    fetch("/api/analytics")
-      .then((res) => res.json())
+    setLoading(true);
+    const endpoint = brandId ? `/api/analytics?brand_id=${encodeURIComponent(brandId)}` : "/api/analytics";
+    fetch(endpoint)
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Unable to load dashboard");
+        return json;
+      })
       .then((json) => {
         setData(json.analytics || null);
         setLoading(false);
@@ -52,7 +61,7 @@ export default function DashboardPage() {
         console.error("Failed to load analytics:", err);
         setLoading(false);
       });
-  }, []);
+  }, [brandId]);
 
   if (loading) {
     return (
@@ -513,6 +522,16 @@ export default function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={<div className="h-72 animate-pulse rounded-xl bg-[#12161f]" aria-label="Loading dashboard" />}
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }
 

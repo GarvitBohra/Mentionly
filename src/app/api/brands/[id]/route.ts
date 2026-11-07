@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveBrand, updateBrand, deleteBrand } from "@/lib/data-service";
+import { getActiveBrand, updateBrand, deleteBrand, verifyBrandOwnership } from "@/lib/data-service";
 import { getAuthenticatedUser, unauthorizedResponse, forbiddenResponse } from "@/lib/auth";
 import { z } from "zod";
 
@@ -60,6 +60,10 @@ export async function PATCH(
     const json = await req.json();
     const validated = updateBrandSchema.parse(json);
 
+    if (!(await verifyBrandOwnership(user.id, id))) {
+      return forbiddenResponse("You do not have access to this brand");
+    }
+
     const updated = await updateBrand(user.id, id, validated);
     if (!updated) {
       return NextResponse.json({ error: "Brand not found or update failed" }, { status: 404 });
@@ -88,6 +92,9 @@ export async function DELETE(
     }
 
     const { id } = await params;
+    if (!(await verifyBrandOwnership(user.id, id))) {
+      return forbiddenResponse("You do not have access to this brand");
+    }
     await deleteBrand(user.id, id);
     return NextResponse.json({ success: true });
   } catch (error: any) {

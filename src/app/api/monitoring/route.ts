@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { monitoringRunSchema } from "@/lib/validations";
-import { getActiveBrand, listBrands, listPrompts, listMonitoringRuns } from "@/lib/data-service";
+import { getActiveBrand, listBrands, listPrompts, listMonitoringRuns, updateBrand, verifyBrandOwnership } from "@/lib/data-service";
+import { suggestCompetitors } from "@/lib/openai";
 import { memoryStore } from "@/lib/store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { executeMonitoringRun } from "@/lib/monitoring-engine";
@@ -20,6 +21,9 @@ export async function GET(req: NextRequest) {
     const brandId = searchParams.get("brand_id");
     if (!brandId) {
       return NextResponse.json({ error: "brand_id is required" }, { status: 400 });
+    }
+    if (!(await verifyBrandOwnership(user.id, brandId))) {
+      return forbiddenResponse("You do not have access to this brand");
     }
 
     const runs = await listMonitoringRuns(user.id, brandId);
@@ -61,10 +65,7 @@ export async function POST(req: NextRequest) {
         language: "English",
         description: "",
         created_at: new Date().toISOString(),
-        competitors: [
-          { id: crypto.randomUUID(), brand_id: validated.brand_id, name: "Otterly.AI" },
-          { id: crypto.randomUUID(), brand_id: validated.brand_id, name: "Profound" },
-        ],
+        competitors: [],
       };
       memoryStore.saveBrand(brand);
     }
@@ -128,6 +129,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const configuredCompetitors = (brand.competitors || []).map((c) => c.name);
+    const legacyDemoCompetitors = ["Otterly.AI", "Profound"];
+    const needsCompetitorRefresh =
+      brand.name.toLowerCase() !== "mentionly" &&
+      (configuredCompetitors.length === 0 ||
+        configuredCompetitors.every((name) => legacyDemoCompetitors.includes(name)));
+
+    if (needsCompetitorRefresh) {
+      try {
+        const suggestedCompetitors = await suggestCompetitors({
+          brandName: brand.name,
+          industry: brand.industry,
+          country: brand.country,
+        });
+        if (suggestedCompetitors.length > 0) {
+          brand = (await updateBrand(user.id, brand.id, { competitors: suggestedCompetitors })) || brand;
+        }
+      } catch (error) {
+        console.warn("Could not generate competitor suggestions; continuing without competitor analysis.", error);
+      }
+    }
+
     const competitorNames = (brand.competitors || []).map((c) => c.name);
 
     // Execute monitoring run
@@ -136,7 +159,7 @@ export async function POST(req: NextRequest) {
       brandId: brand.id,
       brandName: brand.name,
       website: brand.website,
-      competitors: competitorNames.length > 0 ? competitorNames : ["Otterly.AI", "Profound"],
+      competitors: competitorNames,
       prompts: selectedPrompts,
     });
 

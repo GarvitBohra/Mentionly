@@ -6,7 +6,7 @@ import {
   getMonitoringRun,
   listCitations,
 } from "@/lib/data-service";
-import { generateGeoRecommendationsWithGemini } from "@/lib/gemini";
+import { generateGeoRecommendationsWithOpenAI } from "@/lib/openai";
 import { memoryStore } from "@/lib/store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthenticatedUser, unauthorizedResponse, forbiddenResponse } from "@/lib/auth";
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const topSources = Array.from(new Set(citations.map((c) => c.domain)));
 
-    const generatedRecs = await generateGeoRecommendationsWithGemini({
+    const generatedRecs = await generateGeoRecommendationsWithOpenAI({
       brandName: brand.name,
       website: brand.website,
       industry: brand.industry,
@@ -78,10 +78,13 @@ export async function POST(req: NextRequest) {
         created_at: new Date().toISOString(),
       };
 
+      // Keep the immediate local view responsive, but never hide a database failure.
+      memoryStore.saveRecommendation(recItem);
       if (supabase) {
-        await supabase.from("geo_recommendations").insert(recItem);
-      } else {
-        memoryStore.saveRecommendation(recItem);
+        const { error: persistError } = await supabase.from("geo_recommendations").insert(recItem);
+        if (persistError) {
+          throw new Error(`Supabase could not save GEO recommendations: ${persistError.message}`);
+        }
       }
       savedRecs.push(recItem);
     }

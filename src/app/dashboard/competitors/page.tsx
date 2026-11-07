@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { Brand } from "@/types";
+import { getSelectedBrandId } from "@/lib/brand-selection";
 
 interface CompetitorData {
   name: string;
@@ -27,7 +28,9 @@ export default function CompetitorsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/competitors")
+    const brandId = getSelectedBrandId();
+    const endpoint = brandId ? `/api/competitors?brand_id=${encodeURIComponent(brandId)}` : "/api/competitors";
+    fetch(endpoint)
       .then((res) => res.json())
       .then((data) => {
         setBrand(data.brand || null);
@@ -147,7 +150,7 @@ export default function CompetitorsPage() {
             Head-to-Head Search Share
           </CardTitle>
           <CardDescription className="text-xs text-slate-400">
-            Empirical visibility observations from Gemini API Search Grounding responses
+            Empirical visibility observations from OpenAI web-search responses
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">

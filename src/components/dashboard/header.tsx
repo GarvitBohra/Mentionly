@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import { getSelectedBrandId, setSelectedBrandId } from "@/lib/brand-selection";
 
 export function DashboardHeader({
   onMobileMenuToggle,
@@ -41,7 +42,10 @@ export function DashboardHeader({
       .then((data) => {
         if (data?.brands && data.brands.length > 0) {
           setBrands(data.brands);
-          setSelectedBrand(data.brands[0]);
+          const savedBrandId = getSelectedBrandId();
+          const activeBrand = data.brands.find((brand: Brand) => brand.id === savedBrandId) || data.brands[0];
+          setSelectedBrand(activeBrand);
+          setSelectedBrandId(activeBrand.id);
         }
       })
       .catch((err) => console.error("Error loading brands in header:", err));
@@ -100,6 +104,7 @@ export function DashboardHeader({
                   key={b.id}
                   onClick={() => {
                     setSelectedBrand(b);
+                    setSelectedBrandId(b.id);
                     setDropdownOpen(false);
                     router.push(`/dashboard?brand_id=${b.id}`);
                   }}

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     if (!brand) {
       // User has no brands yet - return empty dashboard state
       const emptyAnalytics: DashboardAnalytics = {
-        is_demo: false,
+        is_demo: user.email === "demo@mentionly.ai",
         selected_brand: {
           id: "",
           name: "No Brand Configured",
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     // If no runs exist yet for this brand
     if (runs.length === 0) {
       const emptyAnalytics: DashboardAnalytics = {
-        is_demo: false,
+        is_demo: user.email === "demo@mentionly.ai",
         selected_brand: brand,
         kpis: {
           visibility_score: 0,
@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
       .slice(0, 5);
 
     const analytics: DashboardAnalytics = {
-      is_demo: false,
+      is_demo: user.email === "demo@mentionly.ai",
       selected_brand: brand,
       kpis: {
         visibility_score: latestRun.visibility_score,
