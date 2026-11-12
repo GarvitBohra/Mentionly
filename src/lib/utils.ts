@@ -5,11 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatPercent(value: number | undefined | null): string {
-  if (value === undefined || value === null || isNaN(value)) return "0%";
-  return `${Math.round(value)}%`;
-}
-
 export function formatDate(dateString: string | undefined | null): string {
   if (!dateString) return "N/A";
   try {

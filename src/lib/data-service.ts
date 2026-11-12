@@ -1,686 +1,141 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "./supabase/admin";
-import { memoryStore } from "./store";
-import { getOrCreateUserOrganization } from "./auth";
-import {
-  Brand,
-  Competitor,
-  Prompt,
-  MonitoringRun,
-  MonitoringResult,
-  Citation,
-  GEORecommendation,
-} from "@/types";
+import { Brand, RunResult, RunSummary, Visibility } from "@/types";
 
-export interface SupabaseHealth {
-  isConfigured: boolean;
-  tablesExist: boolean;
-  message?: string;
-}
-
-let cachedHealth: { result: SupabaseHealth; timestamp: number } | null = null;
-
-export async function checkSupabaseHealth(): Promise<SupabaseHealth> {
-  if (cachedHealth && Date.now() - cachedHealth.timestamp < 30000) {
-    return cachedHealth.result;
-  }
-
-  const supabase = createAdminClient();
-  if (!supabase) {
-    const res: SupabaseHealth = {
-      isConfigured: false,
-      tablesExist: false,
-      message: "Supabase credentials not configured in environment variables.",
-    };
-    cachedHealth = { result: res, timestamp: Date.now() };
-    return res;
-  }
-
-  try {
-    const { error } = await supabase.from("brands").select("id").limit(1);
-    if (error) {
-      const res: SupabaseHealth = {
-        isConfigured: true,
-        tablesExist: false,
-        message: `Database connected, but schema tables are missing (${error.message}). Run the migration script in Supabase SQL Editor.`,
-      };
-      cachedHealth = { result: res, timestamp: Date.now() };
-      return res;
-    }
-
-    const res: SupabaseHealth = {
-      isConfigured: true,
-      tablesExist: true,
-      message: "Supabase PostgreSQL connected and schema verified.",
-    };
-    cachedHealth = { result: res, timestamp: Date.now() };
-    return res;
-  } catch (err: any) {
-    const res: SupabaseHealth = {
-      isConfigured: true,
-      tablesExist: false,
-      message: `Failed to connect to Supabase: ${err?.message || "Connection error"}`,
-    };
-    cachedHealth = { result: res, timestamp: Date.now() };
-    return res;
-  }
-}
-
-/**
- * Retrieve all organization IDs that the given user belongs to.
- */
-export async function getUserOrgIds(userId: string): Promise<string[]> {
-  const supabase = createAdminClient();
-  if (!supabase) {
-    return [`org-${userId}`];
-  }
-
-  try {
-    const { data: memberships, error } = await supabase
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", userId);
-
-    if (error || !memberships) {
-      if (error?.code === "PGRST205") {
-        return [`org-${userId}`];
-      }
-      console.warn("Could not query organization_members for user:", error);
-      return [`org-${userId}`];
-    }
-
-    return memberships.length > 0 ? memberships.map((m) => m.organization_id) : [`org-${userId}`];
-  } catch (err) {
-    console.warn("getUserOrgIds exception, using local tenant org:", err);
-    return [`org-${userId}`];
-  }
-}
-
-/**
- * Check if a brand belongs to an organization the user is a member of.
- */
-export async function verifyBrandOwnership(userId: string, brandId: string): Promise<boolean> {
-  const supabase = createAdminClient();
-  if (!supabase) {
-    const b = memoryStore.getBrand(brandId);
-    return !b || b.organization_id === `org-${userId}`;
-  }
-
-  const orgIds = await getUserOrgIds(userId);
-  if (orgIds.length === 0) return true;
-
-  const { data: brand, error } = await supabase
-    .from("brands")
-    .select("id, organization_id")
-    .eq("id", brandId)
-    .single();
-
-  if (error?.code === "PGRST205") {
-    const b = memoryStore.getBrand(brandId);
-    return !b || b.organization_id === `org-${userId}`;
-  }
-
-  if (error || !brand) {
-    const b = memoryStore.getBrand(brandId);
-    return !b || b.organization_id === `org-${userId}`;
-  }
-  return orgIds.includes(brand.organization_id);
-}
-
-/**
- * Get active brand strictly scoped to the authenticated user.
- */
-export async function getActiveBrand(
-  userId?: string,
-  requestedBrandId?: string
-): Promise<Brand | null> {
-  const localOrganizationId = `org-${userId || "demo"}`;
-
-  // 1. Check local/disk memoryStore first for requested ID
-  if (requestedBrandId) {
-    const memBrand = memoryStore.getBrand(requestedBrandId, localOrganizationId);
-    if (memBrand) return memBrand;
-  }
-
-  // 2. Check Supabase
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const organizationIds = await getUserOrgIds(userId || "demo");
-      if (requestedBrandId) {
-        const { data: brand, error } = await supabase
-          .from("brands")
-          .select("*, competitors(*)")
-          .eq("id", requestedBrandId)
-          .in("organization_id", organizationIds)
-          .single();
-
-        if (!error && brand) return brand;
-      }
-
-      const { data: defaultBrand, error: defErr } = await supabase
-        .from("brands")
-        .select("*, competitors(*)")
-        .in("organization_id", organizationIds)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!defErr && defaultBrand) return defaultBrand;
-    } catch (err) {
-      console.warn("Supabase fetch active brand error:", err);
-    }
-  }
-
-  // 3. Check all memoryStore brands
-  const allMem = memoryStore.getBrands(localOrganizationId);
-  if (requestedBrandId) {
-    const byIdOrName = allMem.find(
-      (b) =>
-        b.id === requestedBrandId ||
-        b.name.toLowerCase() === requestedBrandId.toLowerCase()
+/** Supabase is the only data store. Every function throws on database errors. */
+function db(): SupabaseClient {
+  const client = createAdminClient();
+  if (!client) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY in .env."
     );
-    if (byIdOrName) return byIdOrName;
   }
-
-  if (allMem.length > 0) return allMem[0];
-
-  // 4. If requestedBrandId was explicitly passed, synthesize and persist so the run never fails
-  if (requestedBrandId) {
-    const fallbackBrand: Brand = {
-      id: requestedBrandId,
-      organization_id: `org-${userId || "demo"}`,
-      name: "Mentionly Target",
-      website: "https://mentionly.ai",
-      industry: "AI Search Visibility & GEO",
-      country: "Global",
-      language: "English",
-      description: "Auto-initialized brand target for monitoring",
-      is_default: true,
-      created_at: new Date().toISOString(),
-      competitors: [],
-    };
-    memoryStore.saveBrand(fallbackBrand);
-    return fallbackBrand;
-  }
-
-  return null;
+  return client;
 }
 
-/**
- * List brands.
- */
-export async function listBrands(userId?: string): Promise<Brand[]> {
-  let dbBrands: Brand[] = [];
-  const localOrganizationId = `org-${userId || "demo"}`;
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const organizationIds = await getUserOrgIds(userId || "demo");
-      const { data, error } = await supabase
-        .from("brands")
-        .select("*, competitors(*)")
-        .in("organization_id", organizationIds)
-        .order("created_at", { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        dbBrands = data;
-      }
-    } catch (err) {
-      console.warn("Supabase listBrands error:", err);
-    }
-  }
-
-  const memBrands = memoryStore.getBrands(localOrganizationId);
-  const map = new Map<string, Brand>();
-  for (const b of dbBrands) {
-    map.set(b.id, b);
-  }
-  for (const b of memBrands) {
-    if (!map.has(b.id)) {
-      map.set(b.id, b);
-    }
-  }
-
-  const result = Array.from(map.values());
-  return result.length > 0 ? result : memBrands;
+function check<T>(res: { data: T; error: { message: string } | null }, action: string): T {
+  if (res.error) throw new Error(`${action}: ${res.error.message}`);
+  return res.data;
 }
 
-/**
- * Create a new brand.
- * Always saves immediately to memoryStore so the UI never loses the brand,
- * and also attempts to persist to Supabase PostgreSQL.
- */
+const BRAND_SELECT = "*, competitors(*), prompts(*)";
+
+export async function listBrands(userId: string): Promise<Brand[]> {
+  const data = check(
+    await db().from("brands").select(BRAND_SELECT).eq("user_id", userId).order("created_at", { ascending: false }),
+    "List brands"
+  );
+  return (data as Brand[]) || [];
+}
+
+/** The brand with this id, only if the user owns it. */
+export async function getBrand(userId: string, brandId: string): Promise<Brand | null> {
+  const { data } = await db()
+    .from("brands")
+    .select(BRAND_SELECT)
+    .eq("id", brandId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data as Brand) || null;
+}
+
+async function saveCompetitors(brandId: string, names: string[]) {
+  const supabase = db();
+  check(await supabase.from("competitors").delete().eq("brand_id", brandId), "Reset competitors");
+  if (names.length > 0) {
+    check(await supabase.from("competitors").insert(names.map((name) => ({ brand_id: brandId, name }))), "Save competitors");
+  }
+}
+
 export async function createBrand(
   userId: string,
-  userEmail: string,
-  brandData: {
-    name: string;
-    website: string;
-    industry: string;
-    country?: string;
-    language?: string;
-    description?: string;
-    competitors?: string[];
-  }
+  input: { name: string; keyword: string; competitors: string[] }
 ): Promise<Brand> {
-  const brandId = crypto.randomUUID();
-  const competitorsList = brandData.competitors || [];
-
-  const rawWebsite = brandData.website || "mentionly.ai";
-  const formattedWebsite =
-    rawWebsite.startsWith("http://") || rawWebsite.startsWith("https://")
-      ? rawWebsite
-      : `https://${rawWebsite}`;
-
-  const newBrand: Brand = {
-    id: brandId,
-    organization_id: `org-${userId || "default"}`,
-    name: brandData.name || "Mentionly",
-    website: formattedWebsite,
-    industry: brandData.industry || "AI Search Visibility",
-    country: brandData.country || "Global",
-    language: brandData.language || "English",
-    description: brandData.description || "",
-    is_default: memoryStore.getBrands(`org-${userId || "default"}`).length === 0,
-    created_at: new Date().toISOString(),
-    competitors: competitorsList.map((c) => ({
-      id: crypto.randomUUID(),
-      brand_id: brandId,
-      name: c,
-    })),
-  };
-
-  // 1. Always save to local memoryStore immediately so UI NEVER loses the brand
-  memoryStore.saveBrand(newBrand);
-
-  // 2. Also persist to Supabase if available
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const orgId = await getOrCreateUserOrganization(userId, userEmail);
-      newBrand.organization_id = orgId;
-
-      const { data: brandRecord, error: brandErr } = await supabase
-        .from("brands")
-        .insert({
-          id: newBrand.id,
-          organization_id: orgId,
-          name: newBrand.name,
-          website: newBrand.website,
-          industry: newBrand.industry,
-          country: newBrand.country,
-          language: newBrand.language,
-          description: newBrand.description,
-        })
-        .select()
-        .single();
-
-      if (!brandErr && brandRecord && newBrand.competitors) {
-        await supabase.from("competitors").insert(
-          newBrand.competitors.map((c) => ({
-            id: c.id,
-            brand_id: newBrand.id,
-            name: c.name,
-          }))
-        );
-      }
-    } catch (err) {
-      console.warn("Supabase persist failed, brand safely saved in memoryStore:", err);
-    }
-  }
-
-  return newBrand;
+  const data = check(
+    await db().from("brands").insert({ user_id: userId, name: input.name, keyword: input.keyword }).select("id").single(),
+    "Create brand"
+  )!;
+  await saveCompetitors(data.id, input.competitors);
+  return (await getBrand(userId, data.id)) as Brand;
 }
 
-/**
- * Update a brand, ensuring caller has ownership rights.
- */
 export async function updateBrand(
   userId: string,
   id: string,
-  brandData: {
-    name?: string;
-    website?: string;
-    industry?: string;
-    country?: string;
-    language?: string;
-    description?: string;
-    competitors?: string[];
-  }
+  input: { name: string; keyword: string; competitors: string[] }
 ): Promise<Brand | null> {
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const updatePayload: Record<string, any> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (brandData.name) updatePayload.name = brandData.name;
-      if (brandData.website) updatePayload.website = brandData.website;
-      if (brandData.industry) updatePayload.industry = brandData.industry;
-      if (brandData.country) updatePayload.country = brandData.country;
-      if (brandData.language) updatePayload.language = brandData.language;
-      if (brandData.description !== undefined) updatePayload.description = brandData.description;
-
-      const { data: updatedBrand, error } = await supabase
-        .from("brands")
-        .update(updatePayload)
-        .eq("id", id)
-        .select("*, competitors(*)")
-        .single();
-
-      if (!error && updatedBrand) {
-        if (brandData.competitors) {
-          await supabase.from("competitors").delete().eq("brand_id", id);
-          if (brandData.competitors.length > 0) {
-            await supabase.from("competitors").insert(
-              brandData.competitors.map((name) => ({
-                id: crypto.randomUUID(),
-                brand_id: id,
-                name,
-              }))
-            );
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Supabase updateBrand notice:", err);
-    }
-  }
-
-  const existing = memoryStore.getBrand(id);
-  const updated = memoryStore.updateBrand(id, {
-    ...brandData,
-    competitors: brandData.competitors
-      ? brandData.competitors.map((c) => ({
-          id: crypto.randomUUID(),
-          brand_id: id,
-          name: c,
-        }))
-      : existing?.competitors,
-  });
-
-  return updated || existing || null;
+  if (!(await getBrand(userId, id))) return null;
+  check(await db().from("brands").update({ name: input.name, keyword: input.keyword }).eq("id", id), "Update brand");
+  await saveCompetitors(id, input.competitors);
+  return getBrand(userId, id);
 }
 
-/**
- * Delete a brand, ensuring caller has ownership rights.
- */
 export async function deleteBrand(userId: string, id: string): Promise<boolean> {
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      await supabase.from("brands").delete().eq("id", id);
-    } catch (err) {
-      console.warn("Supabase deleteBrand notice:", err);
-    }
-  }
-  memoryStore.deleteBrand(id);
+  if (!(await getBrand(userId, id))) return false;
+  check(await db().from("brands").delete().eq("id", id), "Delete brand");
   return true;
 }
 
-/**
- * List prompts for a brand owned by the user.
- */
-export async function listPrompts(userId: string, brandId: string): Promise<Prompt[]> {
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("prompts")
-        .select("*")
-        .eq("brand_id", brandId)
-        .order("created_at", { ascending: false });
-
-      if (!error && data && data.length > 0) return data;
-    } catch (err) {
-      console.warn("Supabase listPrompts error:", err);
-    }
-  }
-  return memoryStore.getPrompts(brandId);
+/** Replaces the brand's prompts with a fresh generated set. */
+export async function replacePrompts(brandId: string, queries: string[]): Promise<void> {
+  const supabase = db();
+  check(await supabase.from("prompts").delete().eq("brand_id", brandId), "Clear prompts");
+  check(await supabase.from("prompts").insert(queries.map((query_text) => ({ brand_id: brandId, query_text }))), "Save prompts");
 }
 
-/**
- * Create prompt for a user-owned brand.
- */
-export async function createPrompt(
-  userId: string,
-  prompt: {
-    brand_id: string;
-    query_text: string;
-    category: Prompt["category"];
-  }
-): Promise<Prompt> {
-  const newPrompt: Prompt = {
-    id: crypto.randomUUID(),
-    brand_id: prompt.brand_id,
-    query_text: prompt.query_text,
-    category: prompt.category || "Discovery",
-    is_active: true,
-    created_at: new Date().toISOString(),
-  };
-
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.from("prompts").insert(newPrompt).select().single();
-      if (!error && data) return data;
-    } catch (err) {
-      console.warn("Supabase createPrompt error, saving locally:", err);
-    }
-  }
-
-  return memoryStore.savePrompt(newPrompt);
-}
-
-/**
- * Update prompt with ownership validation.
- */
-export async function updatePrompt(
-  userId: string,
-  promptId: string,
-  updates: {
-    query_text?: string;
-    category?: Prompt["category"];
-    is_active?: boolean;
-  }
-): Promise<Prompt | null> {
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const payload: Record<string, any> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (updates.query_text !== undefined) payload.query_text = updates.query_text;
-      if (updates.category !== undefined) payload.category = updates.category;
-      if (updates.is_active !== undefined) payload.is_active = updates.is_active;
-
-      const { data } = await supabase
-        .from("prompts")
-        .update(payload)
-        .eq("id", promptId)
-        .select()
-        .single();
-      if (data) return data;
-    } catch (err) {
-      console.warn("Supabase updatePrompt error:", err);
-    }
-  }
-
-  return memoryStore.updatePrompt(promptId, updates);
-}
-
-/**
- * Delete prompt with ownership validation.
- */
 export async function deletePrompt(userId: string, promptId: string): Promise<boolean> {
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      await supabase.from("prompts").delete().eq("id", promptId);
-      return true;
-    } catch (err) {
-      console.warn("Supabase deletePrompt error:", err);
-    }
-  }
-
-  memoryStore.deletePrompt(promptId);
+  const supabase = db();
+  const { data } = await supabase.from("prompts").select("brand_id").eq("id", promptId).maybeSingle();
+  if (!data || !(await getBrand(userId, data.brand_id))) return false;
+  check(await supabase.from("prompts").delete().eq("id", promptId), "Delete prompt");
   return true;
 }
 
-/**
- * List monitoring runs with brand ownership verification.
- */
-export async function listMonitoringRuns(userId: string, brandId: string): Promise<MonitoringRun[]> {
-  let dbRuns: MonitoringRun[] = [];
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("monitoring_runs")
-        .select("*")
-        .eq("brand_id", brandId)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) dbRuns = data;
-    } catch (err) {
-      console.warn("Supabase listMonitoringRuns error:", err);
-    }
-  }
-
-  const memRuns = memoryStore.getRuns(brandId);
-  const map = new Map<string, MonitoringRun>();
-  for (const r of dbRuns) map.set(r.id, r);
-  for (const r of memRuns) if (!map.has(r.id)) map.set(r.id, r);
-
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+export async function createRun(brandId: string): Promise<string> {
+  const data = check(await db().from("runs").insert({ brand_id: brandId }).select("id").single(), "Create run")!;
+  return data.id;
 }
 
-/**
- * Get monitoring run details with ownership verification.
- */
-export async function getMonitoringRun(
-  userId: string,
-  runId: string
-): Promise<{
-  run: MonitoringRun | undefined;
-  results: MonitoringResult[];
-  citations: Citation[];
-}> {
-  let dbRun: MonitoringRun | undefined = undefined;
-  let dbResults: MonitoringResult[] = [];
-  let dbCitations: Citation[] = [];
+export async function saveResult(result: Omit<RunResult, "id">): Promise<void> {
+  check(await db().from("results").insert(result), "Save result");
+}
 
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data: run, error: runErr } = await supabase
-        .from("monitoring_runs")
-        .select("*")
-        .eq("id", runId)
-        .single();
+/** The brand's latest run with per-name visibility totals. */
+export async function getLatestRun(brand: Brand): Promise<RunSummary> {
+  const supabase = db();
+  const { data: run } = await supabase
+    .from("runs")
+    .select("id, created_at")
+    .eq("brand_id", brand.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!run) return { run: null, results: [], answered: 0, visibility: [] };
 
-      if (run && !runErr) {
-        dbRun = run;
-        const { data: results } = await supabase
-          .from("monitoring_results")
-          .select("*")
-          .eq("run_id", runId)
-          .order("created_at", { ascending: true });
+  const results = (check(
+    await supabase.from("results").select("*").eq("run_id", run.id).order("created_at", { ascending: true }),
+    "Load results"
+  ) || []) as RunResult[];
 
-        const { data: citations } = await supabase
-          .from("citations")
-          .select("*")
-          .eq("brand_id", run.brand_id);
+  const answeredResults = results.filter((r) => !r.error);
+  const answered = answeredResults.length;
+  const percent = (n: number) => (answered ? Math.round((n / answered) * 100) : 0);
 
-        dbResults = results || [];
-        dbCitations = citations || [];
-      }
-    } catch (err) {
-      console.warn("Supabase getMonitoringRun error:", err);
-    }
-  }
-
-  const memRun = memoryStore.getRun(runId);
-  const finalRun = dbRun || memRun;
-  if (!finalRun) {
-    return { run: undefined, results: [], citations: [] };
-  }
-
-  const memResults = memoryStore.getResults(runId);
-  const memCitations = memoryStore.getCitations(finalRun.brand_id);
-
-  // Merge results
-  const resultsMap = new Map<string, MonitoringResult>();
-  for (const r of dbResults) resultsMap.set(r.id, r);
-  for (const r of memResults) if (!resultsMap.has(r.id)) resultsMap.set(r.id, r);
-
-  // Merge citations
-  const citationsMap = new Map<string, Citation>();
-  for (const c of dbCitations) citationsMap.set(c.id, c);
-  for (const c of memCitations) if (!citationsMap.has(c.id)) citationsMap.set(c.id, c);
-
-  return {
-    run: finalRun,
-    results: Array.from(resultsMap.values()),
-    citations: Array.from(citationsMap.values()),
+  const brandRow: Visibility = {
+    name: brand.name,
+    is_brand: true,
+    answers_with_mention: answeredResults.filter((r) => r.brand_count > 0).length,
+    total_mentions: answeredResults.reduce((sum, r) => sum + r.brand_count, 0),
+    percent: 0,
   };
-}
+  const competitorRows: Visibility[] = brand.competitors.map((c) => ({
+    name: c.name,
+    is_brand: false,
+    answers_with_mention: answeredResults.filter((r) => (r.competitor_counts?.[c.name] || 0) > 0).length,
+    total_mentions: answeredResults.reduce((sum, r) => sum + (r.competitor_counts?.[c.name] || 0), 0),
+    percent: 0,
+  }));
+  const visibility = [brandRow, ...competitorRows].map((v) => ({ ...v, percent: percent(v.answers_with_mention) }));
 
-/**
- * List citations with brand ownership verification.
- */
-export async function listCitations(userId: string, brandId: string): Promise<Citation[]> {
-  let dbCitations: Citation[] = [];
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("citations")
-        .select("*")
-        .eq("brand_id", brandId)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) dbCitations = data;
-    } catch (err) {
-      console.warn("Supabase listCitations error:", err);
-    }
-  }
-
-  const memCitations = memoryStore.getCitations(brandId);
-  const map = new Map<string, Citation>();
-  for (const c of dbCitations) map.set(c.id, c);
-  for (const c of memCitations) if (!map.has(c.id)) map.set(c.id, c);
-
-  return Array.from(map.values());
-}
-
-/**
- * List GEO recommendations with brand ownership verification.
- */
-export async function listRecommendations(
-  userId: string,
-  brandId: string
-): Promise<GEORecommendation[]> {
-  const isOwner = await verifyBrandOwnership(userId, brandId);
-  if (!isOwner) {
-    return [];
-  }
-
-  const supabase = createAdminClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("geo_recommendations")
-        .select("*")
-        .eq("brand_id", brandId)
-        .order("created_at", { ascending: false });
-
-      if (!error && data && data.length > 0) return data;
-    } catch (err) {
-      console.warn("Supabase listRecommendations error:", err);
-    }
-  }
-  return memoryStore.getRecommendations(brandId);
+  return { run, results, answered, visibility };
 }

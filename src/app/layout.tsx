@@ -9,9 +9,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Mentionly — AI Search Visibility Platform",
+  title: "Mentionly",
   description:
-    "Know when AI talks about your brand. Monitor your visibility across AI-generated answers, understand competitors, and discover sources shaping recommendations.",
+    "See how often your brand and competitors are mentioned in ChatGPT answers.",
 };
 
 export default function RootLayout({

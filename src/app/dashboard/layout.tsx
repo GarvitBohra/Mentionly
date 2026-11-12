@@ -1,45 +1,37 @@
 "use client";
 
-import React, { useState } from "react";
-import { DashboardSidebar } from "@/components/dashboard/sidebar";
-import { DashboardHeader } from "@/components/dashboard/header";
+import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { LogOut, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+
+  const signOut = async () => {
+    await createClient()?.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
-    <div className="flex min-h-screen bg-[#070a0e] text-slate-100">
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex">
-        <DashboardSidebar isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
-      </div>
-
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div className="relative flex w-64 flex-col bg-[#090d12]">
-            <DashboardSidebar isCollapsed={false} setIsCollapsed={() => setMobileOpen(false)} />
-          </div>
+    <div className="min-h-screen bg-[#070a0e] text-slate-100">
+      <header className="border-b border-[#1e242c] bg-[#090d12]">
+        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
+          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-white">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-600">
+              <Search className="h-3.5 w-3.5" />
+            </span>
+            Mentionly
+          </Link>
+          <Button variant="ghost" size="sm" onClick={signOut}>
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </Button>
         </div>
-      )}
-
-      {/* Main app viewport */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <DashboardHeader onMobileMenuToggle={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl space-y-6">{children}</div>
-        </main>
-      </div>
+      </header>
+      <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">{children}</main>
     </div>
   );
 }
-
