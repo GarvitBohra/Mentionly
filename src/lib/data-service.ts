@@ -100,16 +100,20 @@ export async function saveResult(result: Omit<RunResult, "id">): Promise<void> {
   check(await db().from("results").insert(result), "Save result");
 }
 
-/** The brand's latest run with per-name visibility totals. */
-export async function getLatestRun(brand: Brand): Promise<RunSummary> {
+/**
+ * A run with per-name visibility totals. Pass `runId` to read a specific run
+ * (so overlapping requests never read each other's run); otherwise the latest
+ * run that has at least one saved result.
+ */
+export async function getLatestRun(brand: Brand, runId?: string): Promise<RunSummary> {
   const supabase = db();
-  const { data: run } = await supabase
-    .from("runs")
-    .select("id, created_at")
-    .eq("brand_id", brand.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  let query = supabase.from("runs").select("id, created_at, results(id)").eq("brand_id", brand.id);
+  if (runId) query = query.eq("id", runId);
+  const { data: runs } = await query.order("created_at", { ascending: false }).limit(runId ? 1 : 10);
+  const run = runId
+    ? runs?.[0]
+    : runs?.find((r: { results: unknown[] }) => r.results.length > 0) ?? runs?.[0];
+  if (run) delete (run as { results?: unknown }).results;
   if (!run) return { run: null, results: [], answered: 0, visibility: [] };
 
   const results = (check(

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    const summary = await getLatestRun(brand);
+    const summary = await getLatestRun(brand, runId);
     if (summary.answered === 0) {
       const reason = summary.results[0]?.error || "No answers were returned.";
       return NextResponse.json({ error: `All prompts failed. ${reason}` }, { status: 502 });
