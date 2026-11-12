@@ -56,14 +56,18 @@ export async function generatePrompts(keyword: string, count = 6): Promise<strin
 /** Asks ChatGPT (with web search) the question and returns its answer text. */
 export async function askChatGPT(prompt: string): Promise<string> {
   try {
-    const response = await getClient().responses.create({
-      model: MODEL,
-      max_output_tokens: 700,
-      tools: [{ type: "web_search" }],
-      instructions:
-        "Answer directly and concisely. Name specific brands, companies or products by name. Do not ask clarifying questions; assume the United States if a location matters.",
-      input: prompt,
-    });
+    // Hard 40s limit per question so a run finishes inside the host's function time limit.
+    const response = await getClient().responses.create(
+      {
+        model: MODEL,
+        max_output_tokens: 1200,
+        tools: [{ type: "web_search", search_context_size: "low" }],
+        instructions:
+          "Answer directly and concisely. Name specific brands, companies or products by name. Do not ask clarifying questions; assume the United States if a location matters.",
+        input: prompt,
+      },
+      { timeout: 40_000, maxRetries: 0 }
+    );
     const text = response.output_text.trim();
     if (!text) throw new Error("OpenAI returned no answer. Please run the check again.");
     return text;

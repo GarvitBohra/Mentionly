@@ -14,7 +14,13 @@ async function api<T = any>(url: string, method = "GET", body?: unknown): Promis
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    if (data.error) throw new Error(data.error);
+    if (res.status === 504 || res.status === 408) {
+      throw new Error("The server timed out before ChatGPT finished. Try again; if it keeps happening, your host's function time limit is too short.");
+    }
+    throw new Error(`Request failed (${res.status})`);
+  }
   return data;
 }
 
