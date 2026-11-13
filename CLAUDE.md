@@ -4,40 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Mentionly is an AI Search Visibility (GEO) platform: it runs buyer-style prompts against Gemini with Google Search Grounding, then measures whether a brand is mentioned, recommended and cited. Next.js 15 App Router + React 19 + TypeScript + Tailwind, Supabase (Postgres/Auth), `@google/genai`. Detailed guides live in `docs/` (ARCHITECTURE, DATABASE, API, TESTING, DEPLOYMENT, ENV_SETUP).
+Mentionly counts how often a brand and its competitors are mentioned in AI chat answers. The flow is: a user adds a brand (name, keyword, competitors) → AI generates search questions about the keyword → each question is asked to an AI with web search → the dashboard shows mention counts per brand. Next.js 15 (App Router) + React 19 + TypeScript + Tailwind, Supabase (auth + Postgres), OpenAI with Gemini as backup. The project was recently simplified to this MVP, so older references to scoring engines, monitoring runs, GEO recommendations or `memoryStore` no longer apply.
 
 ## Commands
 
 ```bash
-npm run dev            # dev server at http://localhost:3000
+npm run dev            # http://localhost:3000
 npm run build
 npm run lint
 npx tsc --noEmit       # typecheck
-npm test               # tsx --test on both test files
-npx tsx --test tests/critical-fixes.test.mjs          # single file
-npx tsx --test --test-name-pattern="Issue 2" tests/critical-fixes.test.mjs   # single test
+npm test               # tsx --test tests/critical-fixes.test.mjs
+npx tsx --test --test-name-pattern="countMentions" tests/critical-fixes.test.mjs   # single test
 ```
 
-- `tests/critical-fixes.test.mjs` is a unit suite that imports `src/lib/*.ts` directly (hence `tsx`; plain `node --test` can't load the `.ts` files).
-- `tests/mentionly-suite.test.mjs` hits a live server (`TEST_BASE_URL`, default `http://localhost:3000`). Its tests silently skip network checks when the server isn't running, so a pass doesn't prove the API works. Start `npm run dev` first for real coverage.
-- Env vars (see `.env.example`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`. The Supabase schema is `supabase/migrations/20261106_mentionly_init.sql` and is applied manually in the Supabase SQL editor.
+Tests are pure unit tests that import `src/lib/*.ts` directly, so they need `tsx`, not plain `node --test`. Setup: copy `.env.example` to `.env` (Supabase keys, `OPENAI_API_KEY`, optional `GEMINI_API_KEY`), then run `supabase/schema.sql` in the Supabase SQL editor. **That script drops the old Mentionly tables and their data.**
 
 ## Architecture
 
-Modular monolith: UI pages in `src/app/dashboard/*`, all business logic in route handlers under `src/app/api/*`, shared logic in `src/lib/`.
-
-**Pipeline (the part that spans several files):**
-`monitoring-engine.ts` (batch runner, max 10 prompts per run) → `gemini.ts` (`executeVisibilityQuery`, Search Grounding tool, model fallback chain `gemini-3.8-flash` → `gemini-3.5-flash` → `gemini-3.1-flash-lite`) → `analysis.ts` (brand/alias mention detection, 140-char context window, numbered-rank and "top pick" recommendation detection, competitor positions, grounding-chunk → citation mapping) → `scoring.ts` (composite 0–100: 40% mention rate, 35% recommendation rate, 15% position quality, 10% grounding rate). Prompts whose execution failed (timeouts, 429s) must be excluded from score calculations.
-
-**Hybrid persistence (`data-service.ts` + `store.ts`):** API routes never query Supabase directly; they go through `data-service.ts`. It checks `checkSupabaseHealth()` (cached 30s). If Supabase is unconfigured or the tables are missing, it falls back to the in-memory `memoryStore`. The store lives on `globalThis` and is persisted to `.mentionly_state.json` in the project root, so local data survives restarts. Any new entity or field needs both a Supabase path and a `memoryStore` path.
-
-**Auth and multi-tenancy (`auth.ts`):** Data is scoped by `organizationId` (resolved via `getOrCreateUserOrganization`). `getAuthenticatedUser` accepts a Bearer token or a cookie session, and otherwise **falls back to a demo user** (`demo@mentionly.ai`) so demo flows never get a 401. `src/middleware.ts` is a deliberate pass-through, so real protection happens in the route handlers. Tenant isolation is covered by `critical-fixes.test.mjs`. Keep every query org-scoped.
-
-**Validation and limits:** Mutating routes validate with the Zod schemas in `src/lib/validations.ts`. Long AI routes (`/api/monitoring`, `/api/prompts/generate`, `/api/recommendations/generate`) export `maxDuration = 60` for Vercel.
-
-Path alias `@/` maps to `src/`. Shared types are in `src/types/index.ts`.
+- **UI:** essentially one page, `src/app/dashboard/page.tsx` (brand, prompts, results). `login`/`signup` share `src/components/auth-form.tsx`.
+- **API routes** (`src/app/api/`): `brands`, `prompts` (+ `generate`), `run`, `results`. Each calls `getAuthenticatedUser(req)` and returns `unauthorizedResponse()` on null. There is no demo-user fallback any more.
+- **`src/lib/data-service.ts`:** all Supabase reads and writes. Every query is scoped by `user_id`. Routes should not talk to Supabase directly.
+- **`src/lib/ai.ts` (provider layer):** `generatePrompts` and `askAI`. OpenAI (Responses API with `web_search`) is tried first. If `OPENAI_API_KEY` is missing or the call fails, the same request is retried on Gemini (REST `generateContent`, Google Search grounding, falling back to a plain answer when search is refused). `availableProviders()` treats placeholder keys like `your_..._here` as unset. `formatAIError` turns provider errors into user-readable messages, and `askAI` errors are stored as-is in results.
+- **`src/lib/analysis.ts`:** `countMentions` does case-insensitive, word-boundary matching that tolerates curly apostrophes.
+- **`/api/run`:** takes up to 10 prompts (`MAX_PROMPTS`), asks them all in parallel with `Promise.all`, and saves one result per prompt, including per-prompt errors. It returns 502 only if every prompt failed. `maxDuration = 60` and the 40s per-question timeout in `ai.ts` are sized together for serverless hosts, so keep them consistent if you change either.
+- **`src/middleware.ts`:** refreshes the Supabase session, redirects signed-out users from `/dashboard` to `/login`, and redirects signed-in users away from the landing, login and signup pages. It skips all checks when Supabase env vars are unset or placeholders. API routes enforce their own auth.
+- **Schema:** `supabase/schema.sql` defines 5 tables (brands, competitors, prompts, runs, results). Path alias `@/` maps to `src/`.
 
 ## Notes
 
-- `.env`, `.mentionly_state.json` and `../API_keys/` hold secrets or local data. Don't commit or echo them.
-- Mentionly reports observations from the Gemini API only. UI copy uses `DisclaimerBanner` to say so; keep that framing.
+- `.env` holds secrets (gitignored). Don't commit or echo it. `.mentionly_state.json` is a gitignored leftover from the old in-memory store that the code no longer reads.
