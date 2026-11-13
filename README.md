@@ -1,10 +1,10 @@
 # Mentionly
 
-See how often your brand and your competitors are mentioned in ChatGPT answers.
+See how often your brand and your competitors are mentioned in AI chat answers.
 
 1. Add a brand: name, keyword people search (e.g. `burger`) and competitors.
 2. OpenAI writes the search questions people ask about that keyword.
-3. Mentionly asks ChatGPT (with web search) each question.
+3. Mentionly asks an AI chat assistant (with web search) each question.
 4. You see how many answers mention your brand and each competitor.
 
 Next.js 15 + Supabase (auth and Postgres) + OpenAI.
@@ -23,7 +23,7 @@ If Supabase email confirmation is on, confirm the email before signing in (or tu
 ```
 src/app/dashboard/page.tsx   the whole app UI (brand, prompts, results)
 src/app/api/                 brands, prompts, run, results
-src/lib/openai.ts            generatePrompts + askChatGPT
+src/lib/openai.ts            generatePrompts + askAI
 src/lib/analysis.ts          countMentions
 src/lib/data-service.ts      all Supabase reads/writes (scoped by user_id)
 src/middleware.ts            session refresh, protects /dashboard

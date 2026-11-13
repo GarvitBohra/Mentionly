@@ -9,10 +9,10 @@ export default function LandingPage() {
         <Search className="h-6 w-6" />
       </div>
       <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
-        Is your brand showing up in ChatGPT?
+        Is your brand showing up in AI Chats?
       </h1>
       <p className="mt-4 max-w-xl text-slate-400">
-        Add your brand and a keyword. Mentionly asks ChatGPT the questions people really search and shows how often you
+        Add your brand and a keyword. Mentionly asks AI chat assistants the questions people really search and shows how often you
         and your competitors are mentioned.
       </p>
       <div className="mt-8 flex gap-3">

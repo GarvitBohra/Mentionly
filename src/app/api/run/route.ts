@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrand, createRun, saveResult, getLatestRun } from "@/lib/data-service";
-import { askChatGPT, formatOpenAIError } from "@/lib/openai";
+import { askAI, formatOpenAIError } from "@/lib/openai";
 import { countMentions } from "@/lib/analysis";
 import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 const MAX_PROMPTS = 10; // keeps OpenAI cost and request time bounded
 
-/** Asks ChatGPT every prompt of the brand and counts brand and competitor mentions. */
+/** Asks the AI every prompt of the brand and counts brand and competitor mentions. */
 export async function POST(req: NextRequest) {
   try {
     const user = await getAuthenticatedUser(req);
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     await Promise.all(
       prompts.map(async (prompt) => {
         try {
-          const answer = await askChatGPT(prompt.query_text);
+          const answer = await askAI(prompt.query_text);
           await saveResult({
             run_id: runId,
             prompt_query: prompt.query_text,

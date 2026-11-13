@@ -17,7 +17,7 @@ async function api<T = any>(url: string, method = "GET", body?: unknown): Promis
   if (!res.ok) {
     if (data.error) throw new Error(data.error);
     if (res.status === 504 || res.status === 408) {
-      throw new Error("The server timed out before ChatGPT finished. Try again; if it keeps happening, your host's function time limit is too short.");
+      throw new Error("The server timed out before the AI finished. Try again; if it keeps happening, your host's function time limit is too short.");
     }
     throw new Error(`Request failed (${res.status})`);
   }
@@ -223,7 +223,7 @@ export default function DashboardPage() {
               <div>
                 <CardTitle className="text-base text-white">2. Search prompts</CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  Questions people ask about “{brand.keyword}”, written by OpenAI.
+                  Questions people ask about “{brand.keyword}”, written by AI.
                 </CardDescription>
               </div>
               <Button size="sm" onClick={generatePrompts} isLoading={busy === "prompts"}>
@@ -252,9 +252,9 @@ export default function DashboardPage() {
           <Card className="border-[#1e242c] bg-[#0c1015]">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle className="text-base text-white">3. Visibility in ChatGPT</CardTitle>
+                <CardTitle className="text-base text-white">3. Visibility in AI Chats</CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  How often each name appears in ChatGPT’s answers (with web search).
+                  How often each name appears in AI chat answers.
                 </CardDescription>
               </div>
               <Button size="sm" onClick={runCheck} isLoading={busy === "run"} disabled={brand.prompts.length === 0}>
@@ -262,7 +262,7 @@ export default function DashboardPage() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-5">
-              {busy === "run" && <p className="text-sm text-slate-400">Asking ChatGPT… this can take up to a minute.</p>}
+              {busy === "run" && <p className="text-sm text-slate-400">Asking AI chats… this can take up to a minute.</p>}
 
               {!summary?.run && busy !== "run" && (
                 <p className="text-sm text-slate-400">

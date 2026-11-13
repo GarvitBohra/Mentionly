@@ -11,7 +11,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Mentionly",
   description:
-    "See how often your brand and competitors are mentioned in ChatGPT answers.",
+    "See how often your brand and competitors are mentioned in AI chat answers.",
 };
 
 export default function RootLayout({

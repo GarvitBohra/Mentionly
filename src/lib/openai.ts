@@ -33,7 +33,7 @@ export async function generatePrompts(keyword: string, count = 6): Promise<strin
       model: MODEL,
       max_output_tokens: 1200,
       instructions: "Return only a JSON array of strings. No markdown.",
-      input: `Generate exactly ${count} different questions that real people type into ChatGPT when they want to choose or compare brands, companies or products for "${keyword}". Every question must ask for recommendations, rankings or comparisons so the answer names specific brands (for example "What are the best ${keyword} brands?", "Which ${keyword} option is best value?", "Top ${keyword} places people recommend"). Questions must not need a location or personal details to answer. Never mention any brand, company or website name in the questions.`,
+      input: `Generate exactly ${count} different questions that real people ask AI chat assistants when they want to choose or compare brands, companies or products for "${keyword}". Every question must ask for recommendations, rankings or comparisons so the answer names specific brands (for example "What are the best ${keyword} brands?", "Which ${keyword} option is best value?", "Top ${keyword} places people recommend"). Questions must not need a location or personal details to answer. Never mention any brand, company or website name in the questions.`,
     });
     const text = response.output_text.replace(/```json|```/g, "").trim();
     const start = text.indexOf("[");
@@ -53,8 +53,8 @@ export async function generatePrompts(keyword: string, count = 6): Promise<strin
   }
 }
 
-/** Asks ChatGPT (with web search) the question and returns its answer text. */
-export async function askChatGPT(prompt: string): Promise<string> {
+/** Asks an AI chat assistant (with web search) the question and returns its answer text. */
+export async function askAI(prompt: string): Promise<string> {
   try {
     // Hard 40s limit per question so a run finishes inside the host's function time limit.
     const response = await getClient().responses.create(
