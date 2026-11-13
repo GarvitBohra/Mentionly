@@ -148,6 +148,13 @@ test("both providers failing, or no key at all, gives a clear error", async () =
       await assert.rejects(() => askAI("q"), /OpenAI rate limit.*backup failed too.*Invalid Gemini API key/s);
     }
   );
+  await withFakeAI(
+    { OPENAI_API_KEY: "sk-bad", GEMINI_API_KEY: "" },
+    { openai: () => json(401, { error: { message: "Incorrect API key provided" } }) },
+    async () => {
+      await assert.rejects(() => askAI("q"), /Invalid OpenAI API key.*add GEMINI_API_KEY/s);
+    }
+  );
   await withFakeAI({ OPENAI_API_KEY: "", GEMINI_API_KEY: "" }, {}, async () => {
     await assert.rejects(() => askAI("q"), /No AI key configured/);
   });

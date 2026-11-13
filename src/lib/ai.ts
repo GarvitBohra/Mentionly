@@ -118,7 +118,13 @@ async function generateText(req: TextRequest): Promise<string> {
       failures.push(formatAIError(error, provider));
     }
   }
-  throw new Error(failures.join(" Then the backup failed too: "));
+  const message = failures.join(" Then the backup failed too: ");
+  // Only OpenAI had a key and it failed: say how to get the automatic Gemini fallback.
+  throw new Error(
+    providers.length === 1 && providers[0] === "openai"
+      ? `${message} No backup is set: add GEMINI_API_KEY to switch to Gemini automatically.`
+      : message
+  );
 }
 
 /** Search questions people would ask about a keyword. Only the keyword is sent. */
