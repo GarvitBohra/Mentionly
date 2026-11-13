@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrand, replacePrompts } from "@/lib/data-service";
-import { generatePrompts } from "@/lib/openai";
+import { generatePrompts } from "@/lib/ai";
 import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
 export const maxDuration = 60;

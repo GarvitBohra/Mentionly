@@ -12,7 +12,7 @@ Next.js 15 + Supabase (auth and Postgres) + OpenAI.
 ## Setup
 
 1. `npm install`
-2. Copy `.env.example` to `.env` and fill in the Supabase keys and `OPENAI_API_KEY`.
+2. Copy `.env.example` to `.env` and fill in the Supabase keys and `OPENAI_API_KEY`. Optionally add `GEMINI_API_KEY` as a backup: it is used when there is no OpenAI key, or when OpenAI fails (bad key, no quota, model unavailable).
 3. In the Supabase SQL Editor, run `supabase/schema.sql` (it replaces any old Mentionly tables).
 4. `npm run dev`, open http://localhost:3000, sign up, add a brand.
 
@@ -23,7 +23,7 @@ If Supabase email confirmation is on, confirm the email before signing in (or tu
 ```
 src/app/dashboard/page.tsx   the whole app UI (brand, prompts, results)
 src/app/api/                 brands, prompts, run, results
-src/lib/openai.ts            generatePrompts + askAI
+src/lib/ai.ts                generatePrompts + askAI (OpenAI, Gemini as backup)
 src/lib/analysis.ts          countMentions
 src/lib/data-service.ts      all Supabase reads/writes (scoped by user_id)
 src/middleware.ts            session refresh, protects /dashboard

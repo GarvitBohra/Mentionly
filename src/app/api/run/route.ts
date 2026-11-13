@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrand, createRun, saveResult, getLatestRun } from "@/lib/data-service";
-import { askAI, formatOpenAIError } from "@/lib/openai";
+import { askAI, formatAIError } from "@/lib/ai";
 import { countMentions } from "@/lib/analysis";
 import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
             answer: null,
             brand_count: 0,
             competitor_counts: {},
-            error: formatOpenAIError(err),
+            error: formatAIError(err),
           });
         }
       })
