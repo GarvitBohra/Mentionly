@@ -9,7 +9,7 @@ import OpenAI from "openai";
 export type Provider = "openai" | "gemini";
 
 const OPENAI_MODEL = () => process.env.OPENAI_MONITOR_MODEL || "gpt-4.1";
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 const TIMEOUT_MS = 40_000; // per question, so a whole run fits in the host's function time limit
 
 const PROVIDER_NAME: Record<Provider, string> = { openai: "OpenAI", gemini: "Gemini" };
@@ -39,7 +39,8 @@ export function formatAIError(error: unknown, provider: Provider = "openai"): st
   if (e?.status === 404 || /model.*not found|does not exist/i.test(raw)) {
     const model = provider === "openai" ? OPENAI_MODEL() : GEMINI_MODEL();
     const setting = provider === "openai" ? "OPENAI_MONITOR_MODEL" : "GEMINI_MODEL";
-    return `${name} model "${model}" is unavailable. Set ${setting} to a model your project can access.`;
+    const hint = provider === "gemini" ? ` (${raw.replace(/\s+/g, " ").slice(0, 120)})` : "";
+    return `${name} model "${model}" is unavailable${hint}. Set ${setting} to a model your project can access.`;
   }
   return `${name} request failed: ${raw}`;
 }
@@ -68,7 +69,7 @@ async function openaiText(req: TextRequest): Promise<string> {
   return text;
 }
 
-async function geminiText(req: TextRequest): Promise<string> {
+async function geminiCall(req: TextRequest, withSearch: boolean) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL()}:generateContent`,
     {
@@ -77,13 +78,23 @@ async function geminiText(req: TextRequest): Promise<string> {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: req.instructions }] },
         contents: [{ role: "user", parts: [{ text: req.prompt }] }],
-        ...(req.search ? { tools: [{ google_search: {} }] } : {}),
+        ...(withSearch ? { tools: [{ google_search: {} }] } : {}),
         generationConfig: { maxOutputTokens: Math.max(req.maxTokens, 2048) },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     }
   );
   const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
+
+async function geminiText(req: TextRequest): Promise<string> {
+  let { res, data } = await geminiCall(req, req.search);
+  // Google Search grounding is not available on every Gemini plan (e.g. the free tier
+  // returns a quota error). Retry once without it so the backup still answers.
+  if (!res.ok && req.search && [400, 403, 429].includes(res.status)) {
+    ({ res, data } = await geminiCall(req, false));
+  }
   if (!res.ok) {
     throw Object.assign(new Error(data?.error?.message || `HTTP ${res.status}`), { status: res.status });
   }

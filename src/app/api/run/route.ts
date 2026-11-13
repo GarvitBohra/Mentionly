@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
             answer: null,
             brand_count: 0,
             competitor_counts: {},
-            error: formatAIError(err),
+            error: err instanceof Error ? err.message : formatAIError(err), // askAI errors are already readable
           });
         }
       })

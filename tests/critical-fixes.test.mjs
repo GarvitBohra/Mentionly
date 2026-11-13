@@ -112,6 +112,24 @@ test("OpenAI works: Gemini is never called", async () => {
   );
 });
 
+test("Gemini search blocked by quota: retries without search and still answers", async () => {
+  let n = 0;
+  await withFakeAI(
+    { OPENAI_API_KEY: "", GEMINI_API_KEY: "g-key" },
+    {
+      gemini: (_url, init) => {
+        n++;
+        const hasSearch = !!JSON.parse(init.body).tools;
+        return hasSearch ? json(429, { error: { message: "You exceeded your current quota" } }) : geminiOk("Answer without search");
+      },
+    },
+    async () => {
+      assert.equal(await askAI("q"), "Answer without search");
+      assert.equal(n, 2);
+    }
+  );
+});
+
 test("generatePrompts parses the JSON list from Gemini", async () => {
   const reply = '```json\n["Best cola brands?", "Top soft drinks?"]\n```';
   await withFakeAI({ OPENAI_API_KEY: "", GEMINI_API_KEY: "g-key" }, { gemini: () => geminiOk(reply) }, async () => {
