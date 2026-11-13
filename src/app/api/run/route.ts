@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrand, createRun, saveResult, getLatestRun } from "@/lib/data-service";
-import { askAI, formatAIError } from "@/lib/ai";
+import { askAI } from "@/lib/ai";
 import { countMentions } from "@/lib/analysis";
 import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth";
 
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
             answer: null,
             brand_count: 0,
             competitor_counts: {},
-            error: err instanceof Error ? err.message : formatAIError(err), // askAI errors are already readable
+            error: err instanceof Error ? err.message : String(err), // askAI errors are already readable
           });
         }
       })

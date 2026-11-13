@@ -113,19 +113,17 @@ test("OpenAI works: Gemini is never called", async () => {
 });
 
 test("Gemini search blocked by quota: retries without search and still answers", async () => {
-  let n = 0;
   await withFakeAI(
     { OPENAI_API_KEY: "", GEMINI_API_KEY: "g-key" },
     {
       gemini: (_url, init) => {
-        n++;
         const hasSearch = !!JSON.parse(init.body).tools;
         return hasSearch ? json(429, { error: { message: "You exceeded your current quota" } }) : geminiOk("Answer without search");
       },
     },
-    async () => {
+    async (calls) => {
       assert.equal(await askAI("q"), "Answer without search");
-      assert.equal(n, 2);
+      assert.equal(calls.length, 2);
     }
   );
 });
@@ -152,7 +150,26 @@ test("both providers failing, or no key at all, gives a clear error", async () =
     { OPENAI_API_KEY: "sk-bad", GEMINI_API_KEY: "" },
     { openai: () => json(401, { error: { message: "Incorrect API key provided" } }) },
     async () => {
-      await assert.rejects(() => askAI("q"), /Invalid OpenAI API key.*add GEMINI_API_KEY/s);
+      await assert.rejects(() => askAI("q"), /Invalid OpenAI API key.*Tip: add GEMINI_API_KEY to enable/s);
+    }
+  );
+  // The tip is only for setups without a Gemini key: never shown when a backup was configured.
+  const noTip = (e) => !/Tip: add GEMINI_API_KEY/.test(e.message);
+  await withFakeAI(
+    { OPENAI_API_KEY: "sk-bad", GEMINI_API_KEY: "g-bad" },
+    {
+      openai: () => json(401, { error: { message: "Incorrect API key provided" } }),
+      gemini: () => json(400, { error: { message: "API key not valid" } }),
+    },
+    async () => {
+      await assert.rejects(() => askAI("q"), noTip);
+    }
+  );
+  await withFakeAI(
+    { OPENAI_API_KEY: "", GEMINI_API_KEY: "g-bad" },
+    { gemini: () => json(400, { error: { message: "API key not valid" } }) },
+    async () => {
+      await assert.rejects(() => askAI("q"), noTip);
     }
   );
   await withFakeAI({ OPENAI_API_KEY: "", GEMINI_API_KEY: "" }, {}, async () => {

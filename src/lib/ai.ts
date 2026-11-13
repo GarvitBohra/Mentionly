@@ -6,14 +6,20 @@ import OpenAI from "openai";
  * fails (bad key, no quota, model unavailable, timeout...), the same request
  * is retried on Gemini.
  */
-export type Provider = "openai" | "gemini";
+type Provider = "openai" | "gemini";
 
-const OPENAI_MODEL = () => process.env.OPENAI_MONITOR_MODEL || "gpt-4.1";
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+const PROVIDERS: Record<Provider, { name: string; keyEnv: string; modelEnv: string; defaultModel: string }> = {
+  openai: { name: "OpenAI", keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MONITOR_MODEL", defaultModel: "gpt-4.1" },
+  gemini: { name: "Gemini", keyEnv: "GEMINI_API_KEY", modelEnv: "GEMINI_MODEL", defaultModel: "gemini-3.5-flash-lite" },
+};
+// Read at call time so a changed environment takes effect without a restart of this module.
+const modelFor = (p: Provider) => process.env[PROVIDERS[p].modelEnv] || PROVIDERS[p].defaultModel;
+
 const TIMEOUT_MS = 40_000; // per question, so a whole run fits in the host's function time limit
-
-const PROVIDER_NAME: Record<Provider, string> = { openai: "OpenAI", gemini: "Gemini" };
-const KEY_NAME: Record<Provider, string> = { openai: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY" };
+// Gemini 2.5+/3.x models spend output tokens on hidden reasoning; a small budget can end with no text.
+const GEMINI_MIN_OUTPUT_TOKENS = 2048;
+// Statuses where Google Search grounding was refused (not on this plan / quota) and a plain answer can still work.
+const SEARCH_UNAVAILABLE_STATUSES = [400, 403, 429];
 
 const isRealKey = (v?: string) => !!v && v.trim() !== "" && !/^your[-_]|_here$/i.test(v.trim());
 
@@ -26,7 +32,7 @@ export function availableProviders(env: Record<string, string | undefined> = pro
 }
 
 export function formatAIError(error: unknown, provider: Provider = "openai"): string {
-  const name = PROVIDER_NAME[provider];
+  const { name, keyEnv, modelEnv } = PROVIDERS[provider];
   const e = error as { status?: number; message?: string };
   const raw = e?.message || String(error);
   if (/^(OpenAI|Gemini|No AI key)/.test(raw)) return raw;
@@ -34,13 +40,11 @@ export function formatAIError(error: unknown, provider: Provider = "openai"): st
     return `${name} rate limit or budget limit reached. Check your ${name} usage and try again later.`;
   }
   if (e?.status === 401 || e?.status === 403 || /incorrect api key|invalid api key|api key not valid|authentication|permission/i.test(raw)) {
-    return `Invalid ${name} API key. Check ${KEY_NAME[provider]} in .env.`;
+    return `Invalid ${name} API key. Check ${keyEnv} in .env.`;
   }
   if (e?.status === 404 || /model.*not found|does not exist/i.test(raw)) {
-    const model = provider === "openai" ? OPENAI_MODEL() : GEMINI_MODEL();
-    const setting = provider === "openai" ? "OPENAI_MONITOR_MODEL" : "GEMINI_MODEL";
     const hint = provider === "gemini" ? ` (${raw.replace(/\s+/g, " ").slice(0, 120)})` : "";
-    return `${name} model "${model}" is unavailable${hint}. Set ${setting} to a model your project can access.`;
+    return `${name} model "${modelFor(provider)}" is unavailable${hint}. Set ${modelEnv} to a model your project can access.`;
   }
   return `${name} request failed: ${raw}`;
 }
@@ -56,7 +60,7 @@ async function openaiText(req: TextRequest): Promise<string> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create(
     {
-      model: OPENAI_MODEL(),
+      model: modelFor("openai"),
       max_output_tokens: req.maxTokens,
       instructions: req.instructions,
       input: req.prompt,
@@ -71,7 +75,7 @@ async function openaiText(req: TextRequest): Promise<string> {
 
 async function geminiCall(req: TextRequest, withSearch: boolean) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL()}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelFor("gemini")}:generateContent`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY as string },
@@ -79,7 +83,7 @@ async function geminiCall(req: TextRequest, withSearch: boolean) {
         systemInstruction: { parts: [{ text: req.instructions }] },
         contents: [{ role: "user", parts: [{ text: req.prompt }] }],
         ...(withSearch ? { tools: [{ google_search: {} }] } : {}),
-        generationConfig: { maxOutputTokens: Math.max(req.maxTokens, 2048) },
+        generationConfig: { maxOutputTokens: Math.max(req.maxTokens, GEMINI_MIN_OUTPUT_TOKENS) },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     }
@@ -92,7 +96,7 @@ async function geminiText(req: TextRequest): Promise<string> {
   let { res, data } = await geminiCall(req, req.search);
   // Google Search grounding is not available on every Gemini plan (e.g. the free tier
   // returns a quota error). Retry once without it so the backup still answers.
-  if (!res.ok && req.search && [400, 403, 429].includes(res.status)) {
+  if (!res.ok && req.search && SEARCH_UNAVAILABLE_STATUSES.includes(res.status)) {
     ({ res, data } = await geminiCall(req, false));
   }
   if (!res.ok) {
@@ -119,12 +123,8 @@ async function generateText(req: TextRequest): Promise<string> {
     }
   }
   const message = failures.join(" Then the backup failed too: ");
-  // Only OpenAI had a key and it failed: say how to get the automatic Gemini fallback.
-  throw new Error(
-    providers.length === 1 && providers[0] === "openai"
-      ? `${message} No backup is set: add GEMINI_API_KEY to switch to Gemini automatically.`
-      : message
-  );
+  const hasBackup = providers.includes("gemini");
+  throw new Error(hasBackup ? message : `${message} Tip: add GEMINI_API_KEY to enable an automatic Gemini backup.`);
 }
 
 /** Search questions people would ask about a keyword. Only the keyword is sent. */
